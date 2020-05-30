@@ -8,28 +8,36 @@
 set -e -x
 
 CODE=src
-DATA=musicnet/preprocessed
+DATA=maestro/preprocessed
 
-EXP=musicnet
+EXP=musicnet_1
 export MASTER_PORT=29500
 
 python ${CODE}/train.py \
-    --data ${DATA}/Bach_Solo_Cello  \
-           ${DATA}/Beethoven_Solo_Piano \
-           ${DATA}/Cambini_Wind_Quintet \
-           ${DATA}/Bach_Solo_Piano \
-           ${DATA}/Beethoven_Accompanied_Violin \
-           ${DATA}/Beethoven_String_Quartet  \
-    --batch-size 32 \
+    --data ${DATA}/Felix_Mendelssohn  \
+           ${DATA}/Franz_Liszt \
+           ${DATA}/Franz_Schubert \
+           ${DATA}/Johann_Sebastian_Bach \
+           ${DATA}/Ludwig_van_Beethoven\
+    --batch-size 8 \
     --lr-decay 0.995 \
     --epoch-len 1000 \
-    --num-workers 5 \
+    --num-workers 0 \
     --lr 1e-3 \
     --seq-len 12000 \
     --d-lambda 1e-2 \
     --expName ${EXP} \
     --latent-d 64 \
-    --layers 14 \
-    --blocks 4 \
     --data-aug \
-    --grad-clip 1
+    --grad-clip 1 \
+    --encoder-channels 32 \
+    --blocks 2 \
+    --layers 7 \
+    --d-channels 40
+    
+
+
+       #     ${DATA}/Cambini_Wind_Quintet \
+       #     ${DATA}/Bach_Solo_Piano \
+       #     ${DATA}/Beethoven_Accompanied_Violin \
+       #     ${DATA}/Beethoven_String_Quartet  \

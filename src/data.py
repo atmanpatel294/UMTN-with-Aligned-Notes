@@ -296,10 +296,10 @@ class H5Dataset(data.Dataset):
             start_time = start_time_in_sec * EncodedFilesDataset.WAV_FREQ
             # print(">>>>>>>>>>>>>>>>>>TESTING<<<<<<<<<<<<<<<<<<<<\n",start_time)
             wav = dataset[start_time: start_time + self.seq_len]
-            midi = atman_wrapper(start_time_in_sec, path)
+            midi_chords, midi_durations = atman_wrapper(start_time_in_sec, path)
             assert wav.shape[0] == self.seq_len
 
-        return wav.T, midi.T
+        return wav.T, midi_chords.T
 
     def read_wav_data(self, dataset, path):
         if self.whole_samples:

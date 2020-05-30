@@ -244,7 +244,7 @@ class H5Dataset(data.Dataset):
         ret = None
         while ret is None:
             try:
-                ret = self.try_random_slice()
+                ret, midi = self.try_random_slice()
                 if self.augmentation:
                     ret = [ret, self.augmentation(ret)]
                 else:
@@ -256,15 +256,16 @@ class H5Dataset(data.Dataset):
                 logger.info('Exception %s in dataset __getitem__, path %s', e, self.path)
                 logger.debug('Exception in H5Dataset', exc_info=True)
 
-        return torch.tensor(ret[0]), torch.tensor(ret[1])
+        return torch.tensor(ret[0]), torch.tensor(ret[1]), torch.tensor(midi)
 
     def try_random_slice(self):
         h5file_path = random.choice(self.file_paths)
+        # print("TESTING:",h5file_path)
         if h5file_path in self.data_cache:
             dataset = self.data_cache[h5file_path]
         else:
             dataset = self.read_h5_file(h5file_path)
-        return self.read_wav_data(dataset, h5file_path)
+        return self.read_wav_midi_data(dataset, h5file_path)
 
     def read_h5_file(self, h5file_path):
         try:
@@ -280,6 +281,25 @@ class H5Dataset(data.Dataset):
                              f'Available datasets are: {list(f.keys())}.')
 
         return dataset
+    
+    def read_wav_midi_data(self, dataset, path):
+        if self.whole_samples:
+            data = dataset[:]
+        else:
+            length = dataset.shape[0]
+
+            if length <= self.seq_len:
+                logger.debug('Length of %s is %s', path, length)
+                
+            # start_time = random.randint(0, length - self.seq_len)
+            start_time_in_sec = random.randint(0, (length - self.seq_len)/EncodedFilesDataset.WAV_FREQ)
+            start_time = start_time_in_sec * EncodedFilesDataset.WAV_FREQ
+            # print(">>>>>>>>>>>>>>>>>>TESTING<<<<<<<<<<<<<<<<<<<<\n",start_time)
+            wav = dataset[start_time: start_time + self.seq_len]
+            midi = atman_wrapper(start_time_in_sec, path)
+            assert wav.shape[0] == self.seq_len
+
+        return wav.T, midi.T
 
     def read_wav_data(self, dataset, path):
         if self.whole_samples:
@@ -330,6 +350,7 @@ class DatasetSet:
         self.train_dataset = H5Dataset(dir / 'train', seq_len, epoch_len=10000000000,
                                        dataset_name=args.h5_dataset_name, augmentation=augmentation,
                                        short=args.short, cache=False)
+        
         self.train_loader = data.DataLoader(self.train_dataset,
                                             batch_size=args.batch_size,
                                             num_workers=args.num_workers,

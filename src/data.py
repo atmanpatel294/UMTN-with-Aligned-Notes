@@ -34,6 +34,72 @@ def random_of_length(seq, length):
     end = start + length
     return seq[start: end]
 
+def preprocessMidi(data_dir, target_dir):
+    #remove old folders
+    folders = ['train/','test/','val/']
+    for folder in folders:
+        if os.path.exists(target_dir+folder):
+            shutil.rmtree(target_dir+folder)
+        os.makedirs(target_dir+folder)
+
+    uniqueChords,uniqueDurations = [],[]
+    intToChord, intToDuration, chordToInt, durationToInt = {},{},{},{}
+
+    for folder in folders:
+        
+        songList = [f for f in os.listdir(data_dir+folder) if not f.startswith('.')]
+        num_songs = len(songList)
+        print("\n\nFolder :",folder,", num songs:",num_songs)
+        originalChords = [[] for _ in range(num_songs)]
+        originalDurations = [[] for _ in range(num_songs)]
+        originalTiming = [[] for _ in range(num_songs)]
+
+        original_scores = []
+        for i,song in enumerate(songList):
+            print("file num:", i, "  name:",song)
+            # parse and chordify
+            score = converter.parse(data_dir + folder + song)
+            score_chordify = score.chordify()
+
+            for element in score_chordify:
+                if isinstance(element, note.Note):
+                    originalChords[i].append(element.pitch)
+                    originalDurations[i].append(round(float(element.duration.quarterLength),3))
+                    originalTiming[i].append(float(element.offset))
+                elif isinstance(element, chord.Chord):
+                    originalChords[i].append('.'.join(str(n) for n in element.pitches))
+                    originalDurations[i].append(round(float(element.duration.quarterLength),3))
+                    originalTiming[i].append(float(element.offset))
+
+        
+        if folder=="train/":
+            print("----------------  Indexing  ----------------")
+            uniqueChords = np.unique([i for s in originalChords for i in s])
+            chordToInt = dict(zip(uniqueChords, list(range(1, len(uniqueChords)+1))))
+
+            # Map unique durations to integers
+            uniqueDurations = np.unique([i for s in originalDurations for i in s])
+            # durationToInt = dict(zip(uniqueDurations, list(range(1, len(uniqueDurations)+1))))
+
+            intToChord = {i: c for c, i in chordToInt.items()}
+            # intToDuration = {i: c for c, i in durationToInt.items()}
+
+            print("number of unique chords : ", len(uniqueChords))
+            print("number of unique durations", len(uniqueDurations))
+
+            pickle.dump(chordToInt, open(data_dir+"chordToInt.pkl", "wb"))
+            # pickle.dump(durationToInt, open(data_dir+"durationToInt.pkl", "wb"))
+            pickle.dump(intToChord, open(data_dir+"intToChord.pkl", "wb"))
+            # pickle.dump(intToDuration, open(data_dir+"intToDuration.pkl", "wb"))
+
+        indexedChords = [[chordToInt[c] if c in chordToInt else 0 for c in f] for f in originalChords]
+        # indexedDurations = originalDurations #[[durationToInt[c] for c in f] for f in originalDurations]
+
+        combined = list(zip(originalTiming, indexedChords, originalDurations))
+
+        #save file
+        for i,song in enumerate(songList):
+            pickle.dump( combined[i], open( target_dir + folder + song[:-5] + ".pkl", "wb" ) )
 
 class EncodedFilesDataset(data.Dataset):
     """
@@ -281,6 +347,25 @@ class H5Dataset(data.Dataset):
                              f'Available datasets are: {list(f.keys())}.')
 
         return dataset
+
+    def read_midi_data(self, h5path, start_time, slice_len):
+        pkl_path = h5path[:-3]+".pkl"
+        if not os.path.exists(pkl_path):
+            return None, None
+
+        sTimes,chords,durations = pickle.load(open(pkl_path, 'rb'))
+
+        target_chords, target_durations = [],[]
+        end_time = start_time + slice_len
+
+        for i,t in enumerate(sTimes):
+            if t >= start_time:
+                if t <= end_time:
+                    target_chords.append(chords[i])
+                    target_durations.append(durations[i])
+            if t > end_time:
+                break
+        return target_chords, target_durations
     
     def read_wav_midi_data(self, dataset, path):
         if self.whole_samples:
@@ -296,7 +381,7 @@ class H5Dataset(data.Dataset):
             start_time = start_time_in_sec * EncodedFilesDataset.WAV_FREQ
             # print(">>>>>>>>>>>>>>>>>>TESTING<<<<<<<<<<<<<<<<<<<<\n",start_time)
             wav = dataset[start_time: start_time + self.seq_len]
-            midi_chords, midi_durations = atman_wrapper(start_time_in_sec, path)
+            midi_chords, midi_durations = read_midi_data(path, start_time_in_sec, self.seq_len/EncodedFilesDataset.WAV_FREQ)
             assert wav.shape[0] == self.seq_len
 
         return wav.T, midi_chords.T

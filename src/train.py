@@ -24,6 +24,8 @@ from data import DatasetSet
 from wavenet import WaveNet
 from wavenet_models import cross_entropy_loss, Encoder, ZDiscriminator
 from utils import create_output_dir, LossMeter, wrap
+from midi_encoder import MidiEncoder
+from torch import functional as F
 
 parser = argparse.ArgumentParser(description='PyTorch Code for A Universal Music Translation Network')
 # Env options:
@@ -114,6 +116,15 @@ parser.add_argument('--p-dropout-discriminator', type=float, default=0.0,
 parser.add_argument('--grad-clip', type=float,
                     help='If specified, clip gradients with specified magnitude')
 
+# Midi Encoder options
+parser.add_argument('--m_vocab_size', type=int, default=1024,
+                    help='Total number of unique chords')
+parser.add_argument('--m_hidden_size', type=int, default=1024,
+                    help='Hidden size of the LSTM')
+parser.add_argument('--m_embed_size', type=int, default=1024,
+                    help='Embeddings size of the chords')
+parser.add_argument('--m_lambda', type=float, default=1e-3,
+                    help='Aligned Loss Weight')
 
 class Trainer:
     def __init__(self, args):
@@ -132,6 +143,7 @@ class Trainer:
         self.losses_recon = [LossMeter(f'recon {i}') for i in range(self.args.n_datasets)]
         self.loss_d_right = LossMeter('d')
         self.loss_total = LossMeter('total')
+        self.loss_m_aligned = LossMeter('m')
 
         self.evals_recon = [LossMeter(f'recon {i}') for i in range(self.args.n_datasets)]
         self.eval_d_right = LossMeter('eval d')
@@ -140,6 +152,7 @@ class Trainer:
         self.encoder = Encoder(args)
         self.decoder = WaveNet(args)
         self.discriminator = ZDiscriminator(args)
+        self.midi_encoder = MidiEncoder(args)
 
         if args.checkpoint:
             checkpoint_args_path = os.path.dirname(args.checkpoint) + '/args.pth'
@@ -207,9 +220,9 @@ class Trainer:
 
         return total_loss
 
-    def train_batch(self, x, x_aug, dset_num):
-        x, x_aug = x.float(), x_aug.float()
-
+    def train_batch(self, x, x_aug, x_midi=None, dset_num=None):
+        x, x_aug= x.float(), x_aug.float()
+        assert(dset_num is not None)
         # Optimize D - discriminator right
         z = self.encoder(x)
         z_logits = self.discriminator(z)
@@ -234,8 +247,15 @@ class Trainer:
 
         recon_loss = cross_entropy_loss(y, x)
         self.losses_recon[dset_num].add(recon_loss.data.cpu().numpy().mean())
+        
+        aligned_loss = 0.0
+        if x_midi is not None:
+            # x_midi = x_midi.float()
+            j = self.midi_encoder(x_midi)
+            # either have a discriminator or have a L2 loss
+            aligned_loss = torch.MSELoss(j, z)
 
-        loss = (recon_loss.mean() + self.args.d_lambda * discriminator_wrong)
+        loss = (recon_loss.mean() + self.args.d_lambda * discriminator_wrong + self.args.m_lambda * aligned_loss)
 
         self.model_optimizer.zero_grad()
         loss.backward()
@@ -272,11 +292,12 @@ class Trainer:
                 else:
                     dset_num = batch_num % self.args.n_datasets
 
-                x, x_aug = next(self.data[dset_num].train_iter)
+                x, x_aug, x_midi = next(self.data[dset_num].train_iter)
 
                 x = wrap(x)
                 x_aug = wrap(x_aug)
-                batch_loss = self.train_batch(x, x_aug, dset_num)
+                x_midi = wrap(x_midi)
+                batch_loss = self.train_batch(x, x_aug, x_midi, dset_num)
 
                 train_enum.set_description(f'Train (loss: {batch_loss:.2f}) epoch {epoch}')
                 train_enum.update()

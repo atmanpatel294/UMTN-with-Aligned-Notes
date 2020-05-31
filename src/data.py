@@ -72,7 +72,7 @@ class MidiFileDataset():
                 times.append(float(element.offset))
                 # chords_duration_time.append(('.'.join(str(n) for n in element.pitches), round(float(element.duration.quarterLength),3), float(element.offset)))
         # return chords_duration_time
-        return [durations,chords,times]
+        return [times,chords,durations]
         
         
     def dump_to_folder(self, output:Path):
@@ -397,7 +397,7 @@ class H5Dataset(data.Dataset):
         pkl_path = h5path.with_suffix(".pkl")
         if not os.path.exists(pkl_path):
             return None, None
-
+        print(pkl_path)
         sTimes,chords,durations = pickle.load(open(pkl_path, 'rb'))
         # read_data = pickle.load(open(pkl_path, 'rb'))
         # sTimes = [t for _, _, t in read_data]

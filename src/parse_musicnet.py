@@ -46,84 +46,39 @@ def main():
     args = parser.parse_args()
     print(args)
 
-    # src = args.input
-    # dst = args.output
-    # dst.mkdir(exist_ok=True, parents=True)
-
-    # domains = [
-    #     ['Accompanied Violin', 'Beethoven'],
-    #     ['Solo Cello', 'Bach'],
-    #     ['Solo Piano', 'Bach'],
-    #     ['Solo Piano', 'Beethoven'],
-    #     ['String Quartet', 'Beethoven'],
-    #     ['Wind Quintet', 'Cambini'],
-    # ]
-
-    # db = pandas.read_csv(src / 'musicnet_metadata.csv')
-    # traindir = src / 'train_data'
-    # testdir = src / 'test_data'
-
-    # for (ensemble, composer) in domains:
-    #     fid_list = db[(db["composer"] == composer) & (db["ensemble"] == ensemble)].id.tolist()
-    #     total_time = sum(db[(db["composer"] == composer) & (db["ensemble"] == ensemble)].seconds.tolist())
-    #     print(f"Total time for {composer} with {ensemble} is: {total_time} seconds")
-
-    #     domaindir = dst / f"{composer}_{ensemble.replace(' ', '_')}"
-    #     if not os.path.exists(domaindir):
-    #         os.mkdir(domaindir)
-
-    #     for fid in fid_list:
-    #         fname = traindir / f'{fid}.wav'
-    #         if not fname.exists():
-    #             fname = testdir / f'{fid}.wav'
-
-    #         copy(str(fname), str(domaindir))
-            
-            
     src = args.input
     dst = args.output
-    
+    dst.mkdir(exist_ok=True, parents=True)
+
     domains = [
-        'Alexander Scriabin',
-        'Claude Debussy',
-        'Domenico Scarlatti',
-        'Felix Mendelssohn',
-        'Franz Liszt',
-        'Franz Schubert',
-        'Johann Sebastian Bach',
-        'Joseph Haydn',
-        'Ludwig van Beethoven',
-        'Robert Schumann',
-        'Sergei Rachmaninoff',
-        'Wolfgang Amadeus Mozart',
+        ['Accompanied Violin', 'Beethoven'],
+        ['Solo Cello', 'Bach'],
+        ['Solo Piano', 'Bach'],
+        ['Solo Piano', 'Beethoven'],
+        ['String Quartet', 'Beethoven'],
+        ['Wind Quintet', 'Cambini'],
     ]
 
-    db = pandas.read_csv(src/"maestro-v2.0.0.csv")
+    db = pandas.read_csv(src / 'musicnet_metadata.csv')
+    traindir = src / 'train_data'
+    testdir = src / 'test_data'
 
-    for composer in domains:
-        print(composer)
-        fid_list = db[(db["canonical_composer"] == composer)].audio_filename.tolist()
-        # print(fid_list)
-        
-        total_time = sum(db[(db["canonical_composer"] == composer)].duration.tolist())
-        print(f"Total time for {composer} with is: {total_time} seconds")
+    for (ensemble, composer) in domains:
+        fid_list = db[(db["composer"] == composer) & (db["ensemble"] == ensemble)].id.tolist()
+        total_time = sum(db[(db["composer"] == composer) & (db["ensemble"] == ensemble)].seconds.tolist())
+        print(f"Total time for {composer} with {ensemble} is: {total_time} seconds")
 
-        domaindir = dst / f"{composer.replace(' ', '_')}"
-        
+        domaindir = dst / f"{composer}_{ensemble.replace(' ', '_')}"
         if not os.path.exists(domaindir):
             os.mkdir(domaindir)
 
         for fid in fid_list:
-            fname = src / fid
-            fmidiname = fname.with_suffix('.midi')
-            # print(fname)
-            if os.path.exists(fname):
-                # print(fname)
-                copy(str(fname), str(domaindir))
-                copy(str(fmidiname), str(domaindir))
-                # fname = testdir / f'{fid}.wav'
-                # continue
-            
+            fname = traindir / f'{fid}.wav'
+            if not fname.exists():
+                fname = testdir / f'{fid}.wav'
+
+            copy(str(fname), str(domaindir))
+
 
 if __name__ == '__main__':
     main()

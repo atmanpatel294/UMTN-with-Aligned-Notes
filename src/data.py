@@ -67,7 +67,7 @@ class MidiFileDataset():
                 times.append(float(element.offset))
                 # chords_duration_time.append((element.pitch, round(float(element.duration.quarterLength),3), float(element.offset)))
             elif isinstance(element, chord.Chord):
-                chords.append('.'.join(str(n) for n in element.pitches))
+                chords.append('.'.join(str(n) for n in sorted(element.pitches)))
                 durations.append(round(float(element.duration.quarterLength),3))
                 times.append(float(element.offset))
                 # chords_duration_time.append(('.'.join(str(n) for n in element.pitches), round(float(element.duration.quarterLength),3), float(element.offset)))

@@ -80,8 +80,8 @@ def main():
     #         copy(str(fname), str(domaindir))
             
             
-    src = 'maestro'
-    dst = 'maestro/parsed'
+    src = args.input
+    dst = args.output
     
     domains = [
         'Alexander Scriabin',
@@ -98,25 +98,23 @@ def main():
         'Wolfgang Amadeus Mozart',
     ]
 
-    db = pandas.read_csv(src+'/maestro-v2.0.0.csv')
-    traindir = src
-    # testdir = src + '/test_data'
+    db = pandas.read_csv(src/"maestro-v2.0.0.csv")
 
     for composer in domains:
         print(composer)
         fid_list = db[(db["canonical_composer"] == composer)].audio_filename.tolist()
-        
         # print(fid_list)
+        
         total_time = sum(db[(db["canonical_composer"] == composer)].duration.tolist())
         print(f"Total time for {composer} with is: {total_time} seconds")
 
-        domaindir = dst + '/' + f"{composer.replace(' ', '_')}"
+        domaindir = dst / f"{composer.replace(' ', '_')}"
         
         if not os.path.exists(domaindir):
             os.mkdir(domaindir)
 
         for fid in fid_list:
-            fname = traindir + '/' + fid
+            fname = src / fid
             # print(fname)
             if os.path.exists(fname):
                 print(fname)
@@ -124,10 +122,6 @@ def main():
                 # fname = testdir / f'{fid}.wav'
                 # continue
             
-    
-    
-    
-
 
 if __name__ == '__main__':
     main()

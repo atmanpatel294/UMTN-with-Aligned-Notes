@@ -17,6 +17,8 @@ import torch
 import torch.utils.data as data
 import tqdm
 from scipy.io import wavfile
+import pickle 
+from music21 import note, chord, converter
 
 import utils
 from utils import mu_law
@@ -34,73 +36,96 @@ def random_of_length(seq, length):
     end = start + length
     return seq[start: end]
 
-def preprocessMidi(data_dir, target_dir):
-    #remove old folders
-    folders = ['train/','test/','val/']
-    for folder in folders:
-        if os.path.exists(target_dir+folder):
-            shutil.rmtree(target_dir+folder)
-        os.makedirs(target_dir+folder)
-
-    uniqueChords,uniqueDurations = [],[]
-    intToChord, intToDuration, chordToInt, durationToInt = {},{},{},{}
-
-    for folder in folders:
+class MidiFileDataset():
+    """
+    Uses music21 to read midi files
+    """
+    FILE_TYPES = ['midi', 'mid']
+    SEQ_LEN = 1.0
+    
+    def __init__(self, top, file_type=None):
+        self.path = Path(top)
+        self.file_types = [file_type] if file_type else self.FILE_TYPES
+        self.file_paths = self.filter_paths(self.path.glob('**/*'), self.file_types)
+        print("file_paths", self.file_paths)
         
-        songList = [f for f in os.listdir(data_dir+folder) if not f.startswith('.')]
-        num_songs = len(songList)
-        print("\n\nFolder :",folder,", num songs:",num_songs)
-        originalChords = [[] for _ in range(num_songs)]
-        originalDurations = [[] for _ in range(num_songs)]
-        originalTiming = [[] for _ in range(num_songs)]
+    def dump_to_folder(self, output:Path):
+        #remove old folders
+        folders = ['/train/','/test/','/val/']
+        # for folder in folders:
+        #     if os.path.exists(target_dir+folder):
+        #         shutil.rmtree(target_dir+folder)
+        #     os.makedirs(target_dir+folder)
 
-        original_scores = []
-        for i,song in enumerate(songList):
-            print("file num:", i, "  name:",song)
-            # parse and chordify
-            score = converter.parse(data_dir + folder + song)
-            score_chordify = score.chordify()
+        uniqueChords,uniqueDurations = [],[]
+        intToChord, intToDuration, chordToInt, durationToInt = {},{},{},{}
+        for folder in folders:
+            # songList = [f for f in os.listdir(data_dir+folder) if not f.startswith('.')]
+            songList = [f for f in self.file_paths if folder in str(f)]
+            
 
-            for element in score_chordify:
-                if isinstance(element, note.Note):
-                    originalChords[i].append(element.pitch)
-                    originalDurations[i].append(round(float(element.duration.quarterLength),3))
-                    originalTiming[i].append(float(element.offset))
-                elif isinstance(element, chord.Chord):
-                    originalChords[i].append('.'.join(str(n) for n in element.pitches))
-                    originalDurations[i].append(round(float(element.duration.quarterLength),3))
-                    originalTiming[i].append(float(element.offset))
+            num_songs = len(songList)
+            # print("\n\nFolder :",folder,", num songs:",num_songs)
+            originalChords = [[] for _ in range(num_songs)]
+            originalDurations = [[] for _ in range(num_songs)]
+            originalTiming = [[] for _ in range(num_songs)]
 
-        
-        if folder=="train/":
-            print("----------------  Indexing  ----------------")
-            uniqueChords = np.unique([i for s in originalChords for i in s])
-            chordToInt = dict(zip(uniqueChords, list(range(1, len(uniqueChords)+1))))
+            original_scores = []
+            for i, song in enumerate(songList):
+                print("file num:", i, "  name:", song)
+                # parse and chordify
+                score = converter.parse(song)
+                score_chordify = score.chordify()
 
-            # Map unique durations to integers
-            uniqueDurations = np.unique([i for s in originalDurations for i in s])
-            # durationToInt = dict(zip(uniqueDurations, list(range(1, len(uniqueDurations)+1))))
+                for element in score_chordify:
+                    if isinstance(element, note.Note):
+                        originalChords[i].append(element.pitch)
+                        originalDurations[i].append(round(float(element.duration.quarterLength),3))
+                        originalTiming[i].append(float(element.offset))
+                    elif isinstance(element, chord.Chord):
+                        originalChords[i].append('.'.join(str(n) for n in element.pitches))
+                        originalDurations[i].append(round(float(element.duration.quarterLength),3))
+                        originalTiming[i].append(float(element.offset))
 
-            intToChord = {i: c for c, i in chordToInt.items()}
-            # intToDuration = {i: c for c, i in durationToInt.items()}
+            
+            if folder=="/train/":
+                print("----------------  Indexing  ----------------")
+                uniqueChords = np.unique([i for s in originalChords for i in s])
+                chordToInt = dict(zip(uniqueChords, list(range(1, len(uniqueChords)+1))))
 
-            print("number of unique chords : ", len(uniqueChords))
-            print("number of unique durations", len(uniqueDurations))
+                # Map unique durations to integers
+                uniqueDurations = np.unique([i for s in originalDurations for i in s])
+                # durationToInt = dict(zip(uniqueDurations, list(range(1, len(uniqueDurations)+1))))
 
-            pickle.dump(chordToInt, open(data_dir+"chordToInt.pkl", "wb"))
-            # pickle.dump(durationToInt, open(data_dir+"durationToInt.pkl", "wb"))
-            pickle.dump(intToChord, open(data_dir+"intToChord.pkl", "wb"))
-            # pickle.dump(intToDuration, open(data_dir+"intToDuration.pkl", "wb"))
+                intToChord = {i: c for c, i in chordToInt.items()}
+                # intToDuration = {i: c for c, i in durationToInt.items()}
 
-        indexedChords = [[chordToInt[c] if c in chordToInt else 0 for c in f] for f in originalChords]
-        # indexedDurations = originalDurations #[[durationToInt[c] for c in f] for f in originalDurations]
+                print("number of unique chords : ", len(uniqueChords))
+                print("number of unique durations", len(uniqueDurations))
 
-        combined = list(zip(originalTiming, indexedChords, originalDurations))
+                pickle.dump(chordToInt, open(str(self.path) + "/chordToInt.pkl", "wb"))
+                # pickle.dump(durationToInt, open(data_dir+"durationToInt.pkl", "wb"))
+                pickle.dump(intToChord, open(str(self.path) + "/intToChord.pkl", "wb"))
+                # pickle.dump(intToDuration, open(data_dir+"intToDuration.pkl", "wb"))
 
-        #save file
-        for i,song in enumerate(songList):
-            pickle.dump( combined[i], open( target_dir + folder + song[:-5] + ".pkl", "wb" ) )
+            indexedChords = [[chordToInt[c] if c in chordToInt else 0 for c in f] for f in originalChords]
+            # indexedDurations = originalDurations #[[durationToInt[c] for c in f] for f in originalDurations]
 
+            combined = list(zip(originalTiming, indexedChords, originalDurations))
+            #save file
+            for i,song in enumerate(songList):
+                output_file_path = output / song.relative_to(self.path).with_suffix('.pkl')
+                output_file_path.parent.mkdir(parents=True, exist_ok=True)
+                pickle.dump( combined[i], open(str(output_file_path), "wb"))
+    
+    @staticmethod
+    def filter_paths(haystack, file_types):
+        return [f for f in haystack
+                if (f.is_file()
+                    and any(f.name.endswith(suffix) for suffix in file_types)
+                    and '__MACOSX' not in f.parts)]
+
+    
 class EncodedFilesDataset(data.Dataset):
     """
     Uses ffmpeg to read a random short segment from the middle of an encoded file

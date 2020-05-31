@@ -29,6 +29,7 @@ def split(input_path: Path, output_path: Path, train_ratio, val_ratio, filetype)
         filetypes = data.EncodedFilesDataset.FILE_TYPES
 
     input_files = data.EncodedFilesDataset.filter_paths(input_path.glob('**/*'), filetypes)
+    print(input_files)
     random.shuffle(input_files)
 
     logger.info(f'Found {len(input_files)} files')

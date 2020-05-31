@@ -22,6 +22,8 @@ def main():
     print(args)
     dataset = data.EncodedFilesDataset(args.input)
     dataset.dump_to_folder(args.output, norm_db=args.norm_db)
+    midi_dataset = data.MidiFileDataset(args.input)
+    midi_dataset.dump_to_folder(args.output)
 
 
 

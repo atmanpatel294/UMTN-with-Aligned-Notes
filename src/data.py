@@ -366,9 +366,9 @@ class H5Dataset(data.Dataset):
                 logger.info('Exception %s in dataset __getitem__, path %s', e, self.path)
                 logger.debug('Exception in H5Dataset', exc_info=True)
 
-        print("getitem shapes: ", ret[0].shape, ret[1].shape, midi.shape)
+        # print("getitem shapes: ", ret[0].shape, ret[1].shape, midi.shape)
 
-        return torch.tensor(ret[0]), torch.tensor(ret[1]), torch.tensor(midi)
+        return torch.tensor(ret[0]), torch.tensor(ret[1]), torch.LongTensor(midi)
 
     def try_random_slice(self):
         h5file_path = random.choice(self.file_paths)
@@ -399,7 +399,7 @@ class H5Dataset(data.Dataset):
         pkl_path = h5path.with_suffix(".pkl")
         if not os.path.exists(pkl_path):
             return None, None
-        print(pkl_path)
+        # print(pkl_path)
         sTimes,chords,durations = pickle.load(open(pkl_path, 'rb'))
         # read_data = pickle.load(open(pkl_path, 'rb'))
         # sTimes = [t for _, _, t in read_data]
@@ -435,9 +435,9 @@ class H5Dataset(data.Dataset):
             # start_time = random.randint(0, length - self.seq_len)
             start_time_in_sec = random.randint(0, int((length - self.seq_len)/EncodedFilesDataset.WAV_FREQ))
             start_time = start_time_in_sec * EncodedFilesDataset.WAV_FREQ
-            print(">>>>>>>>>>>>>>>>>>TESTING<<<<<<<<<<<<<<<<<<<<\n",start_time)
+            # print(">>>>>>>>>>>>>>>>>>TESTING<<<<<<<<<<<<<<<<<<<<\n",start_time)
             wav = dataset[start_time: start_time + self.seq_len]
-            print(wav.shape)
+            # print(wav.shape)
             midi_chords, midi_durations = self.read_midi_data(path, start_time_in_sec, self.seq_len/EncodedFilesDataset.WAV_FREQ)
             assert wav.shape[0] == self.seq_len
 

@@ -25,7 +25,6 @@ from wavenet import WaveNet
 from wavenet_models import cross_entropy_loss, Encoder, ZDiscriminator
 from utils import create_output_dir, LossMeter, wrap
 from midi_encoder import MidiEncoder
-from torch import functional as F
 
 import pdb
 
@@ -119,11 +118,11 @@ parser.add_argument('--grad-clip', type=float,
                     help='If specified, clip gradients with specified magnitude')
 
 # Midi Encoder options
-parser.add_argument('--m_vocab_size', type=int, default=1024,
+parser.add_argument('--m_vocab_size', type=int, default=50000,
                     help='Total number of unique chords')
-parser.add_argument('--m_hidden_size', type=int, default=1024,
+parser.add_argument('--m_hidden_size', type=int, default=960,
                     help='Hidden size of the LSTM')
-parser.add_argument('--m_embed_size', type=int, default=1024,
+parser.add_argument('--m_embed_size', type=int, default=20,
                     help='Embeddings size of the chords')
 parser.add_argument('--m_lambda', type=float, default=1e-3,
                     help='Aligned Loss Weight')
@@ -180,10 +179,12 @@ class Trainer:
         else:
             self.encoder = torch.nn.DataParallel(self.encoder).cuda()
             self.discriminator = torch.nn.DataParallel(self.discriminator).cuda()
+            self.midi_encoder = torch.nn.DataParallel(self.midi_encoder).cuda()
         self.decoder = torch.nn.DataParallel(self.decoder).cuda()
 
         self.model_optimizer = optim.Adam(chain(self.encoder.parameters(),
-                                                self.decoder.parameters()),
+                                                self.decoder.parameters(),
+                                                self.midi_encoder.parameters()),
                                           lr=args.lr)
         self.d_optimizer = optim.Adam(self.discriminator.parameters(),
                                       lr=args.lr)
@@ -252,10 +253,15 @@ class Trainer:
         
         aligned_loss = 0.0
         if x_midi is not None:
-            # x_midi = x_midi.float()
-            j = self.midi_encoder(x_midi)
+            # x_midi = x_midi.cpu()
+            h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
+            h = h.view(z.shape)
+            # print(">>>>>>>>>>>>>>>WOOOOOOHOOOOO<<<<<<<<<<<<<<<<<<<<")
+            # print(x_midi.shape)
+            # print(h.shape)
+            # print(z.shape)
             # either have a discriminator or have a L2 loss
-            aligned_loss = torch.MSELoss(j, z)
+            aligned_loss = F.mse_loss(h, z)
 
         loss = (recon_loss.mean() + self.args.d_lambda * discriminator_wrong + self.args.m_lambda * aligned_loss)
 

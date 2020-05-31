@@ -50,7 +50,7 @@ class MidiEncoder(nn.Module):
         return hidden, cell
 
     def init_hidden(self, bs):
-        return torch.zeros(bs, self.hidden_size).type(torch.FloatTensor)
+        return torch.zeros(bs, self.hidden_size).type(torch.FloatTensor).cuda()
 
 # class Decoder(nn.Module):
 #     def __init__(self, vocab_size, hidden_size):

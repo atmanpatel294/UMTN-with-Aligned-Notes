@@ -14,11 +14,7 @@ EXP=musicnet_1
 export MASTER_PORT=29500
 
 python ${CODE}/train.py \
-    --data ${DATA}/Felix_Mendelssohn  \
-           ${DATA}/Franz_Liszt \
-           ${DATA}/Franz_Schubert \
-           ${DATA}/Johann_Sebastian_Bach \
-           ${DATA}/Ludwig_van_Beethoven\
+    --data ${DATA}/Franz_Liszt \
     --batch-size 8 \
     --lr-decay 0.995 \
     --epoch-len 1000 \
@@ -37,6 +33,10 @@ python ${CODE}/train.py \
     
 
 
+       #     ${DATA}/Felix_Mendelssohn  \
+       #     ${DATA}/Franz_Schubert \
+       #     ${DATA}/Johann_Sebastian_Bach \
+       #     ${DATA}/Ludwig_van_Beethoven\
        #     ${DATA}/Cambini_Wind_Quintet \
        #     ${DATA}/Bach_Solo_Piano \
        #     ${DATA}/Beethoven_Accompanied_Violin \

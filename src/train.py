@@ -27,6 +27,8 @@ from utils import create_output_dir, LossMeter, wrap
 from midi_encoder import MidiEncoder
 from torch import functional as F
 
+import pdb
+
 parser = argparse.ArgumentParser(description='PyTorch Code for A Universal Music Translation Network')
 # Env options:
 parser.add_argument('--epochs', type=int, default=10000, metavar='N',
@@ -292,6 +294,7 @@ class Trainer:
                 else:
                     dset_num = batch_num % self.args.n_datasets
 
+                pdb.set_trace()
                 x, x_aug, x_midi = next(self.data[dset_num].train_iter)
 
                 x = wrap(x)

@@ -55,15 +55,24 @@ class MidiFileDataset():
         print("file_paths", self.file_paths)
         
     def extract_chords_duration_time_from_song(self, song):
+
         score = converter.parse(song)
         score_chordify = score.chordify()
         chords_duration_time = []
+        chords,durations,times = [],[],[]
         for element in score_chordify:
             if isinstance(element, note.Note):
-                chords_duration_time.append((element.pitch, round(float(element.duration.quarterLength),3), float(element.offset)))
+                chords.append(element.pitch)
+                durations.append(round(float(element.duration.quarterLength),3))
+                times.append(float(element.offset))
+                # chords_duration_time.append((element.pitch, round(float(element.duration.quarterLength),3), float(element.offset)))
             elif isinstance(element, chord.Chord):
-                chords_duration_time.append(('.'.join(str(n) for n in element.pitches), round(float(element.duration.quarterLength),3), float(element.offset)))
-        return chords_duration_time
+                chords.append('.'.join(str(n) for n in element.pitches))
+                durations.append(round(float(element.duration.quarterLength),3))
+                times.append(float(element.offset))
+                # chords_duration_time.append(('.'.join(str(n) for n in element.pitches), round(float(element.duration.quarterLength),3), float(element.offset)))
+        # return chords_duration_time
+        return [durations,chords,times]
         
         
     def dump_to_folder(self, output:Path):
@@ -91,11 +100,11 @@ class MidiFileDataset():
             
             if folder=="/train/":
                 print("----------------  Indexing  ----------------")
-                uniqueChords = np.unique([i[0] for s in processed_song_list for i in s])
+                uniqueChords = np.unique([i for s in processed_song_list for i in s[1]])
                 chordToInt = dict(zip(uniqueChords, list(range(1, len(uniqueChords)+1))))
 
                 # Map unique durations to integers
-                uniqueDurations = np.unique([i[1] for s in processed_song_list for i in s])
+                uniqueDurations = np.unique([i for s in processed_song_list for i in s[2]])
                 # durationToInt = dict(zip(uniqueDurations, list(range(1, len(uniqueDurations)+1))))
 
                 intToChord = {i: c for c, i in chordToInt.items()}
@@ -109,15 +118,23 @@ class MidiFileDataset():
                 pickle.dump(intToChord, open(str(self.path) + "/intToChord.pkl", "wb"))
                 # pickle.dump(intToDuration, open(data_dir+"intToDuration.pkl", "wb"))
 
-            indexedChords = [[chordToInt[c[0]] if c[0] in chordToInt else 0 for c in f] for f in processed_song_list]
+            # indexedChords = [[chordToInt[c[0]] if c[0] in chordToInt else 0 for c in f] for f in processed_song_list]
+            for song in processed_song_list:
+                for i,chord in enumerate(song[1]):
+                    if chord in chordToInt:
+                        song[1][i] = chordToInt[chord]
+                    else:
+                        song[1][i] = 0
+            
             # indexedDurations = originalDurations #[[durationToInt[c] for c in f] for f in originalDurations]
 
             # combined = list(zip(originalTiming, indexedChords, originalDurations))
             #save file
+            # print(processed_song_list)
             for i,song in enumerate(songList):
                 output_file_path = output / song.relative_to(self.path).with_suffix('.pkl')
                 output_file_path.parent.mkdir(parents=True, exist_ok=True)
-                pickle.dump( processed_song_list[i], open(str(output_file_path), "wb"))
+                pickle.dump( np.array(processed_song_list[i]), open(str(output_file_path), "wb"))
     
     @staticmethod
     def filter_paths(haystack, file_types):
@@ -333,7 +350,7 @@ class H5Dataset(data.Dataset):
                     f'Path: {self.path}')
 
     def __getitem__(self, _):
-        # pdb.set_trace()
+        pdb.set_trace()
         ret = None
         while ret is None:
             try:
@@ -376,16 +393,16 @@ class H5Dataset(data.Dataset):
         return dataset
 
     def read_midi_data(self, h5path, start_time, slice_len):
-        # pdb.set_trace()
+        pdb.set_trace()
         pkl_path = h5path.with_suffix(".pkl")
         if not os.path.exists(pkl_path):
             return None, None
 
-        # sTimes,chords,durations = pickle.load(open(pkl_path, 'rb'))
-        read_data = pickle.load(open(pkl_path, 'rb'))
-        sTimes = [t for _, _, t in read_data]
-        chords = [c for c, _, _ in read_data]
-        durations = [d for _, d, t in read_data]
+        sTimes,chords,durations = pickle.load(open(pkl_path, 'rb'))
+        # read_data = pickle.load(open(pkl_path, 'rb'))
+        # sTimes = [t for _, _, t in read_data]
+        # chords = [c for c, _, _ in read_data]
+        # durations = [d for _, d, t in read_data]
 
         target_chords, target_durations = [],[]
         end_time = start_time + slice_len

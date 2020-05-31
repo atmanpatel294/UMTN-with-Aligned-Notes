@@ -18,8 +18,13 @@ logger = utils.setup_logger('__name__', 'train.log')
 def copy_files(files, from_path, to_path: Path):
     for f in files:
         out_file_path = to_path / f.relative_to(from_path)
+        print(out_file_path)
         out_file_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(f, out_file_path)
+        f_midi = f.with_suffix('.midi')
+        if os.path.exists(f_midi):
+            shutil.copy(f_midi, out_file_path)
+
 
 def zip_midi_wav(wav_file_names):
     midi_file_names = []
@@ -38,7 +43,7 @@ def split(input_path: Path, output_path: Path, train_ratio, val_ratio, filetype)
         filetypes = data.EncodedFilesDataset.FILE_TYPES
 
     input_files = data.EncodedFilesDataset.filter_paths(input_path.glob('**/*'), filetypes)
-    input_files = zip_midi_wav(input_files)
+    # input_files = zip_midi_wav(input_files)
     print(input_files)
     random.shuffle(input_files)
 

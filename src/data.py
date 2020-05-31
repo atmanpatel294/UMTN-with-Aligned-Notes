@@ -350,7 +350,7 @@ class H5Dataset(data.Dataset):
                     f'Path: {self.path}')
 
     def __getitem__(self, _):
-        pdb.set_trace()
+        # pdb.set_trace()
         ret = None
         while ret is None:
             try:
@@ -365,6 +365,8 @@ class H5Dataset(data.Dataset):
             except Exception as e:
                 logger.info('Exception %s in dataset __getitem__, path %s', e, self.path)
                 logger.debug('Exception in H5Dataset', exc_info=True)
+
+        print("getitem shapes: ", ret[0].shape, ret[1].shape, midi.shape)
 
         return torch.tensor(ret[0]), torch.tensor(ret[1]), torch.tensor(midi)
 
@@ -393,7 +395,7 @@ class H5Dataset(data.Dataset):
         return dataset
 
     def read_midi_data(self, h5path, start_time, slice_len):
-        pdb.set_trace()
+        # pdb.set_trace()
         pkl_path = h5path.with_suffix(".pkl")
         if not os.path.exists(pkl_path):
             return None, None
@@ -404,15 +406,20 @@ class H5Dataset(data.Dataset):
         # chords = [c for c, _, _ in read_data]
         # durations = [d for _, d, t in read_data]
 
-        target_chords, target_durations = [],[]
+        target_chords, target_durations = np.zeros(16),np.zeros(16)
         end_time = start_time + slice_len
-
+        idx = 0
         for i,t in enumerate(sTimes):
             if t >= start_time:
                 if t <= end_time:
-                    target_chords.append(chords[i])
-                    target_durations.append(durations[i])
-            if t > end_time:
+                    # target_chords.append(chords[i])
+                    # target_durations.append(durations[i])
+                    target_chords[idx] = chords[i]
+                    target_durations[idx] = durations[i]
+                    idx += 1
+            #ASSUMPTION : max midi size 16
+            # TODO : pass this as an argument
+            if t > end_time or idx>16:
                 break
         return target_chords, target_durations
     
@@ -430,6 +437,7 @@ class H5Dataset(data.Dataset):
             start_time = start_time_in_sec * EncodedFilesDataset.WAV_FREQ
             print(">>>>>>>>>>>>>>>>>>TESTING<<<<<<<<<<<<<<<<<<<<\n",start_time)
             wav = dataset[start_time: start_time + self.seq_len]
+            print(wav.shape)
             midi_chords, midi_durations = self.read_midi_data(path, start_time_in_sec, self.seq_len/EncodedFilesDataset.WAV_FREQ)
             assert wav.shape[0] == self.seq_len
 

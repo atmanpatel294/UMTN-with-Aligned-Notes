@@ -294,7 +294,7 @@ class Trainer:
                 else:
                     dset_num = batch_num % self.args.n_datasets
 
-                pdb.set_trace()
+                # pdb.set_trace()
                 x, x_aug, x_midi = next(self.data[dset_num].train_iter)
 
                 x = wrap(x)

@@ -42,14 +42,17 @@ Requirements:
 2. Extract specific domains from MusicNet dataset: 
    ```
    python src/parse_musicnet.py -i musicnet -o musicnet/parsed
+   python src/parse_musicnet.py -i maestro -o maestro/parsed
    ```
 3. Split into train/test/val 
     ```
     for d in musicnet/parsed/*/ ; do python src/split_dir.py -i $d -o musicnet/split/$(basename "$d"); done
+    for d in maestro/parsed/*/ ; do python src/split_midi_wav_dir.py -i $d -o maestro/split/$(basename "$d"); done
     ```
 4. Preprocess audio for training
     ```
     python src/preprocess.py -i musicnet/split -o musicnet/preprocessed
+    python src/preprocess.py -i maestro/split -o maestro/preprocessed
     ```
 
 ### Pretrained Models

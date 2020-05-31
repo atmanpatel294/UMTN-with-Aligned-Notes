@@ -115,10 +115,12 @@ def main():
 
         for fid in fid_list:
             fname = src / fid
+            fmidiname = fname.with_suffix('.midi')
             # print(fname)
             if os.path.exists(fname):
-                print(fname)
+                # print(fname)
                 copy(str(fname), str(domaindir))
+                copy(str(fmidiname), str(domaindir))
                 # fname = testdir / f'{fid}.wav'
                 # continue
             

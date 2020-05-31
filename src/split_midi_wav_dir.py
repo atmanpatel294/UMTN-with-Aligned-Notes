@@ -11,6 +11,7 @@ import random
 import data
 import shutil
 import utils
+import os
 
 logger = utils.setup_logger('__name__', 'train.log')
 
@@ -18,23 +19,26 @@ logger = utils.setup_logger('__name__', 'train.log')
 def copy_files(files, from_path, to_path: Path):
     for f in files:
         out_file_path = to_path / f.relative_to(from_path)
-        print(out_file_path)
+        # print(out_file_path)
         out_file_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(f, out_file_path)
         f_midi = f.with_suffix('.midi')
+        # print(f)
+        # print(f_midi)
         if os.path.exists(f_midi):
-            shutil.copy(f_midi, out_file_path)
+            # print("", out_file_path)
+            shutil.copy(f_midi, out_file_path.with_suffix('.midi'))
 
 
-def zip_midi_wav(wav_file_names):
-    midi_file_names = []
-    for name in wav_file_names:
-        midi_name = name.with_suffix('.midi')
-        if os.path.exists(midi_name):
-            midi_file_names.append(midi_name)
-        else:
-            midi_file_names.append(None)
-    return zip(wav_file_names, midi_file_names)
+# def zip_midi_wav(wav_file_names):
+#     midi_file_names = []
+#     for name in wav_file_names:
+#         midi_name = name.with_suffix('.midi')
+#         if os.path.exists(midi_name):
+#             midi_file_names.append(midi_name)
+#         else:
+#             midi_file_names.append(None)
+#     return zip(wav_file_names, midi_file_names)
 
 def split(input_path: Path, output_path: Path, train_ratio, val_ratio, filetype):
     if filetype:
@@ -44,7 +48,7 @@ def split(input_path: Path, output_path: Path, train_ratio, val_ratio, filetype)
 
     input_files = data.EncodedFilesDataset.filter_paths(input_path.glob('**/*'), filetypes)
     # input_files = zip_midi_wav(input_files)
-    print(input_files)
+    # print(input_files)
     random.shuffle(input_files)
 
     logger.info(f'Found {len(input_files)} files')
@@ -86,3 +90,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

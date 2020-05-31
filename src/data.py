@@ -19,9 +19,14 @@ import tqdm
 from scipy.io import wavfile
 import pickle 
 from music21 import note, chord, converter
+from multiprocessing import Pool
 
 import utils
 from utils import mu_law
+
+import os
+
+import pdb
 
 logger = utils.setup_logger(__name__, 'data.log')
 
@@ -49,6 +54,18 @@ class MidiFileDataset():
         self.file_paths = self.filter_paths(self.path.glob('**/*'), self.file_types)
         print("file_paths", self.file_paths)
         
+    def extract_chords_duration_time_from_song(self, song):
+        score = converter.parse(song)
+        score_chordify = score.chordify()
+        chords_duration_time = []
+        for element in score_chordify:
+            if isinstance(element, note.Note):
+                chords_duration_time.append((element.pitch, round(float(element.duration.quarterLength),3), float(element.offset)))
+            elif isinstance(element, chord.Chord):
+                chords_duration_time.append(('.'.join(str(n) for n in element.pitches), round(float(element.duration.quarterLength),3), float(element.offset)))
+        return chords_duration_time
+        
+        
     def dump_to_folder(self, output:Path):
         #remove old folders
         folders = ['/train/','/test/','/val/']
@@ -66,35 +83,19 @@ class MidiFileDataset():
 
             num_songs = len(songList)
             # print("\n\nFolder :",folder,", num songs:",num_songs)
-            originalChords = [[] for _ in range(num_songs)]
-            originalDurations = [[] for _ in range(num_songs)]
-            originalTiming = [[] for _ in range(num_songs)]
 
             original_scores = []
-            for i, song in enumerate(songList):
-                print("file num:", i, "  name:", song)
-                # parse and chordify
-                score = converter.parse(song)
-                score_chordify = score.chordify()
 
-                for element in score_chordify:
-                    if isinstance(element, note.Note):
-                        originalChords[i].append(element.pitch)
-                        originalDurations[i].append(round(float(element.duration.quarterLength),3))
-                        originalTiming[i].append(float(element.offset))
-                    elif isinstance(element, chord.Chord):
-                        originalChords[i].append('.'.join(str(n) for n in element.pitches))
-                        originalDurations[i].append(round(float(element.duration.quarterLength),3))
-                        originalTiming[i].append(float(element.offset))
-
+            with Pool(16) as p:
+                processed_song_list = p.map(self.extract_chords_duration_time_from_song, songList)
             
             if folder=="/train/":
                 print("----------------  Indexing  ----------------")
-                uniqueChords = np.unique([i for s in originalChords for i in s])
+                uniqueChords = np.unique([i[0] for s in processed_song_list for i in s])
                 chordToInt = dict(zip(uniqueChords, list(range(1, len(uniqueChords)+1))))
 
                 # Map unique durations to integers
-                uniqueDurations = np.unique([i for s in originalDurations for i in s])
+                uniqueDurations = np.unique([i[1] for s in processed_song_list for i in s])
                 # durationToInt = dict(zip(uniqueDurations, list(range(1, len(uniqueDurations)+1))))
 
                 intToChord = {i: c for c, i in chordToInt.items()}
@@ -108,15 +109,15 @@ class MidiFileDataset():
                 pickle.dump(intToChord, open(str(self.path) + "/intToChord.pkl", "wb"))
                 # pickle.dump(intToDuration, open(data_dir+"intToDuration.pkl", "wb"))
 
-            indexedChords = [[chordToInt[c] if c in chordToInt else 0 for c in f] for f in originalChords]
+            indexedChords = [[chordToInt[c[0]] if c[0] in chordToInt else 0 for c in f] for f in processed_song_list]
             # indexedDurations = originalDurations #[[durationToInt[c] for c in f] for f in originalDurations]
 
-            combined = list(zip(originalTiming, indexedChords, originalDurations))
+            # combined = list(zip(originalTiming, indexedChords, originalDurations))
             #save file
             for i,song in enumerate(songList):
                 output_file_path = output / song.relative_to(self.path).with_suffix('.pkl')
                 output_file_path.parent.mkdir(parents=True, exist_ok=True)
-                pickle.dump( combined[i], open(str(output_file_path), "wb"))
+                pickle.dump( processed_song_list[i], open(str(output_file_path), "wb"))
     
     @staticmethod
     def filter_paths(haystack, file_types):
@@ -332,6 +333,7 @@ class H5Dataset(data.Dataset):
                     f'Path: {self.path}')
 
     def __getitem__(self, _):
+        # pdb.set_trace()
         ret = None
         while ret is None:
             try:
@@ -374,11 +376,16 @@ class H5Dataset(data.Dataset):
         return dataset
 
     def read_midi_data(self, h5path, start_time, slice_len):
-        pkl_path = h5path[:-3]+".pkl"
+        # pdb.set_trace()
+        pkl_path = h5path.with_suffix(".pkl")
         if not os.path.exists(pkl_path):
             return None, None
 
-        sTimes,chords,durations = pickle.load(open(pkl_path, 'rb'))
+        # sTimes,chords,durations = pickle.load(open(pkl_path, 'rb'))
+        read_data = pickle.load(open(pkl_path, 'rb'))
+        sTimes = [t for _, _, t in read_data]
+        chords = [c for c, _, _ in read_data]
+        durations = [d for _, d, t in read_data]
 
         target_chords, target_durations = [],[]
         end_time = start_time + slice_len
@@ -402,14 +409,14 @@ class H5Dataset(data.Dataset):
                 logger.debug('Length of %s is %s', path, length)
                 
             # start_time = random.randint(0, length - self.seq_len)
-            start_time_in_sec = random.randint(0, (length - self.seq_len)/EncodedFilesDataset.WAV_FREQ)
+            start_time_in_sec = random.randint(0, int((length - self.seq_len)/EncodedFilesDataset.WAV_FREQ))
             start_time = start_time_in_sec * EncodedFilesDataset.WAV_FREQ
-            # print(">>>>>>>>>>>>>>>>>>TESTING<<<<<<<<<<<<<<<<<<<<\n",start_time)
+            print(">>>>>>>>>>>>>>>>>>TESTING<<<<<<<<<<<<<<<<<<<<\n",start_time)
             wav = dataset[start_time: start_time + self.seq_len]
-            midi_chords, midi_durations = read_midi_data(path, start_time_in_sec, self.seq_len/EncodedFilesDataset.WAV_FREQ)
+            midi_chords, midi_durations = self.read_midi_data(path, start_time_in_sec, self.seq_len/EncodedFilesDataset.WAV_FREQ)
             assert wav.shape[0] == self.seq_len
 
-        return wav.T, midi_chords.T
+        return wav.T, np.array(midi_chords).T
 
     def read_wav_data(self, dataset, path):
         if self.whole_samples:

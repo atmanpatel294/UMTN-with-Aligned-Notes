@@ -196,7 +196,7 @@ class Trainer:
         params = [{'params' : d.parameters()} for d in self.decoders] + [{'params': self.encoder.parameters()}] +\
             [{'params': self.midi_encoder.parameters()}]
             
-        print(params)
+        # print(params)
         
         self.model_optimizer = optim.Adam(params, lr=args.lr)
         self.d_optimizer = optim.Adam(self.discriminator.parameters(),
@@ -210,8 +210,10 @@ class Trainer:
         self.lr_manager.last_epoch = self.start_epoch
         self.lr_manager.step()
 
-    def eval_batch(self, x, x_aug, dset_num):
+    def eval_batch(self, x, x_aug, x_midi, dset_num):
         x, x_aug = x.float(), x_aug.float()
+        
+        assert(dset_num is not None)
 
         z = self.encoder(x)
         y = self.decoders[dset_num](x, z)
@@ -228,9 +230,17 @@ class Trainer:
         recon_loss = cross_entropy_loss(y, x)
 
         self.evals_recon[dset_num].add(recon_loss.data.cpu().numpy().mean())
-
+        
         total_loss = discriminator_right.data.item() * self.args.d_lambda + \
                      recon_loss.mean().data.item()
+                     
+        aligned_loss = 0.0
+        if x_midi is not None:
+            h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
+            h = h.view(z.shape)
+            aligned_loss = F.mse_loss(h, z)
+            total_loss += self.args.m_lambda * aligned_loss.mean().data.item()
+
 
         self.eval_total.add(total_loss)
 
@@ -265,6 +275,8 @@ class Trainer:
         recon_loss = cross_entropy_loss(y, x)
         self.losses_recon[dset_num].add(recon_loss.data.cpu().numpy().mean())
         
+        loss = (recon_loss.mean() + self.args.d_lambda * discriminator_wrong)
+        
         aligned_loss = 0.0
         if x_midi is not None:
             # x_midi = x_midi.cpu()
@@ -276,8 +288,8 @@ class Trainer:
             # print(z.shape)
             # either have a discriminator or have a L2 loss
             aligned_loss = F.mse_loss(h, z)
+            loss += self.args.m_lambda * aligned_loss
 
-        loss = (recon_loss.mean() + self.args.d_lambda * discriminator_wrong + self.args.m_lambda * aligned_loss)
 
         self.model_optimizer.zero_grad()
         loss.backward()
@@ -301,7 +313,7 @@ class Trainer:
         for decoder in self.decoders:
             decoder.train()
         self.discriminator.train()
-
+        self.midi_encoder.train()
         n_batches = self.args.epoch_len
 
         with tqdm(total=n_batches, desc='Train epoch %d' % epoch) as train_enum:
@@ -341,6 +353,7 @@ class Trainer:
         for decoder in self.decoders:
             decoder.eval()
         self.discriminator.eval()
+        self.midi_encoder.eval()
 
         n_batches = int(np.ceil(self.args.epoch_len / 10))
 
@@ -356,11 +369,14 @@ class Trainer:
                 else:
                     dset_num = batch_num % self.args.n_datasets
 
-                x, x_aug = next(self.data[dset_num].valid_iter)
+                x, x_aug, x_midi = next(self.data[dset_num].train_iter)
 
                 x = wrap(x)
                 x_aug = wrap(x_aug)
-                batch_loss = self.eval_batch(x, x_aug, dset_num)
+                if(x_midi is not None):
+                    x_midi = wrap(x_midi)
+                
+                batch_loss = self.eval_batch(x, x_aug, x_midi, dset_num)
 
                 valid_enum.set_description(f'Test (loss: {batch_loss:.2f}) epoch {epoch}')
                 valid_enum.update()
@@ -420,8 +436,9 @@ class Trainer:
                    save_path)
         
         for i, decoder in enumerate(self.decoders):
+            decoder_path = str(self.expPath) + "_d_" + str(i) + ".pth"
             torch.save({'decoder_state': decoder.module.state_dict()},
-                       save_path.with_suffix("d_"+i+".state"))
+                       decoder_path)
 
         self.logger.debug(f'Saved model to {save_path}')
 

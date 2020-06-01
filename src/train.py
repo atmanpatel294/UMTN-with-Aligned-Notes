@@ -224,6 +224,7 @@ class Trainer:
         return total_loss
 
     def train_batch(self, x, x_aug, x_midi=None, dset_num=None):
+        # print(x)
         x, x_aug= x.float(), x_aug.float()
         assert(dset_num is not None)
         # Optimize D - discriminator right
@@ -302,10 +303,14 @@ class Trainer:
 
                 # pdb.set_trace()
                 x, x_aug, x_midi = next(self.data[dset_num].train_iter)
+                # print(next(self.data[dset_num].train_iter))
+                # print("x: ", x)
+                # print("x_midi: ",x_midi)
 
                 x = wrap(x)
                 x_aug = wrap(x_aug)
-                x_midi = wrap(x_midi)
+                if(x_midi is not None):
+                    x_midi = wrap(x_midi)
                 batch_loss = self.train_batch(x, x_aug, x_midi, dset_num)
 
                 train_enum.set_description(f'Train (loss: {batch_loss:.2f}) epoch {epoch}')

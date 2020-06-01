@@ -8,14 +8,15 @@
 set -e -x
 
 CODE=src
-DATA=maestro/preprocessed
+DATA=datasets/preprocessed
 
 EXP=musicnet_1
 export MASTER_PORT=29500
 
 python ${CODE}/train.py \
     --data ${DATA}/Franz_Liszt \
-    --batch-size 8 \
+           ${DATA}/Beethoven_Accompanied_Violin \
+    --batch-size 1 \
     --lr-decay 0.995 \
     --epoch-len 1000 \
     --num-workers 0 \
@@ -39,5 +40,4 @@ python ${CODE}/train.py \
        #     ${DATA}/Ludwig_van_Beethoven\
        #     ${DATA}/Cambini_Wind_Quintet \
        #     ${DATA}/Bach_Solo_Piano \
-       #     ${DATA}/Beethoven_Accompanied_Violin \
        #     ${DATA}/Beethoven_String_Quartet  \

@@ -367,8 +367,10 @@ class H5Dataset(data.Dataset):
                 logger.debug('Exception in H5Dataset', exc_info=True)
 
         # print("getitem shapes: ", ret[0].shape, ret[1].shape, midi.shape)
-
-        return torch.tensor(ret[0]), torch.tensor(ret[1]), torch.LongTensor(midi)
+        # if(midi is None):
+        #     return torch.tensor(ret[0]), torch.tensor(ret[1]), None
+        # return torch.tensor(ret[0]), torch.tensor(ret[1]), torch.LongTensor(midi)
+        return ret[0], ret[1], midi
 
     def try_random_slice(self):
         h5file_path = random.choice(self.file_paths)
@@ -440,7 +442,8 @@ class H5Dataset(data.Dataset):
             # print(wav.shape)
             midi_chords, midi_durations = self.read_midi_data(path, start_time_in_sec, self.seq_len/EncodedFilesDataset.WAV_FREQ)
             assert wav.shape[0] == self.seq_len
-
+        if(midi_chords is None):
+            return wav.T, None
         return wav.T, np.array(midi_chords).T
 
     def read_wav_data(self, dataset, path):
@@ -483,6 +486,17 @@ class WavFrequencyAugmentation:
 
 
 class DatasetSet:
+
+    @staticmethod
+    def my_collate(batch):
+        x = torch.tensor([item[0] for item in batch])
+        x_aug = torch.tensor([item[1] for item in batch])
+        if batch[0][2] is None:
+            return x, x_aug, None
+        midi = torch.LongTensor([item[2] for item in batch])
+        # return [torch.tensor(x), torch.tensor(x_aug), torch.LongTensor(midi)]
+        return x, x_aug, midi
+
     def __init__(self, dir: Path, seq_len, args):
         if args.data_aug:
             augmentation = WavFrequencyAugmentation(EncodedFilesDataset.WAV_FREQ, args.magnitude)
@@ -496,6 +510,7 @@ class DatasetSet:
         self.train_loader = data.DataLoader(self.train_dataset,
                                             batch_size=args.batch_size,
                                             num_workers=args.num_workers,
+                                            collate_fn=DatasetSet.my_collate,
                                             pin_memory=True)
 
         self.train_iter = iter(self.train_loader)
@@ -505,6 +520,7 @@ class DatasetSet:
                                        short=args.short)
         self.valid_loader = data.DataLoader(self.valid_dataset,
                                             batch_size=args.batch_size,
+                                            collate_fn=DatasetSet.my_collate,
                                             num_workers=args.num_workers // 10 + 1,
                                             pin_memory=True)
 

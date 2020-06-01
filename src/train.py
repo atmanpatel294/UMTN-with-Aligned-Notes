@@ -151,7 +151,8 @@ class Trainer:
         self.eval_total = LossMeter('eval total')
 
         self.encoder = Encoder(args)
-        self.decoder = WaveNet(args)
+        # self.decoder = WaveNet(args)
+        self.decoders = [WaveNet(args) for _ in self.data]
         self.discriminator = ZDiscriminator(args)
         self.midi_encoder = MidiEncoder(args)
 
@@ -163,29 +164,41 @@ class Trainer:
             states = torch.load(args.checkpoint)
 
             self.encoder.load_state_dict(states['encoder_state'])
-            self.decoder.load_state_dict(states['decoder_state'])
+            # self.decoder.load_state_dict(states['decoder_state'])
             self.discriminator.load_state_dict(states['discriminator_state'])
 
             self.logger.info('Loaded checkpoint parameters')
+            
+            # TODO: Fix the decoder load state
         else:
             self.start_epoch = 0
 
         if args.distributed:
-            self.encoder.cuda()
-            self.encoder = torch.nn.parallel.DistributedDataParallel(self.encoder)
-            self.discriminator.cuda()
-            self.discriminator = torch.nn.parallel.DistributedDataParallel(self.discriminator)
-            self.logger.info('Created DistributedDataParallel')
+            work = 0
+            wont = 0
+            this = wont+work
+            # self.encoder.cuda()
+            # self.encoder = torch.nn.parallel.DistributedDataParallel(self.encoder)
+            # self.discriminator.cuda()
+            # self.discriminator = torch.nn.parallel.DistributedDataParallel(self.discriminator)
+            # self.logger.info('Created DistributedDataParallel')
+            # self.decoder = torch.nn.DataParallel(self.decoder).cuda()
         else:
             self.encoder = torch.nn.DataParallel(self.encoder).cuda()
             self.discriminator = torch.nn.DataParallel(self.discriminator).cuda()
             self.midi_encoder = torch.nn.DataParallel(self.midi_encoder).cuda()
-        self.decoder = torch.nn.DataParallel(self.decoder).cuda()
+        self.decoders = [torch.nn.DataParallel(d).cuda() for d in self.decoders]
 
-        self.model_optimizer = optim.Adam(chain(self.encoder.parameters(),
-                                                self.decoder.parameters(),
-                                                self.midi_encoder.parameters()),
-                                          lr=args.lr)
+        # self.model_optimizer = optim.Adam(chain(self.encoder.parameters(),
+        #                                         self.decoder.parameters(),
+        #                                         self.midi_encoder.parameters()),
+        #                                   lr=args.lr)
+        params = [{'params' : d.parameters()} for d in self.decoders] + [{'params': self.encoder.parameters()}] +\
+            [{'params': self.midi_encoder.parameters()}]
+            
+        print(params)
+        
+        self.model_optimizer = optim.Adam(params, lr=args.lr)
         self.d_optimizer = optim.Adam(self.discriminator.parameters(),
                                       lr=args.lr)
 
@@ -201,7 +214,7 @@ class Trainer:
         x, x_aug = x.float(), x_aug.float()
 
         z = self.encoder(x)
-        y = self.decoder(x, z)
+        y = self.decoders[dset_num](x, z)
         z_logits = self.discriminator(z)
 
         z_classification = torch.max(z_logits, dim=1)[1]
@@ -241,7 +254,7 @@ class Trainer:
 
         # optimize G - reconstructs well, discriminator wrong
         z = self.encoder(x_aug)
-        y = self.decoder(x, z)
+        y = self.decoders[dset_num](x, z)
         z_logits = self.discriminator(z)
         discriminator_wrong = - F.cross_entropy(z_logits, torch.tensor([dset_num] * x.size(0)).long().cuda()).mean()
 
@@ -270,7 +283,8 @@ class Trainer:
         loss.backward()
         if self.args.grad_clip is not None:
             clip_grad_value_(self.encoder.parameters(), self.args.grad_clip)
-            clip_grad_value_(self.decoder.parameters(), self.args.grad_clip)
+            for decoder in self.decoders:
+                clip_grad_value_(decoder.parameters(), self.args.grad_clip)
         self.model_optimizer.step()
 
         self.loss_total.add(loss.data.item())
@@ -284,7 +298,8 @@ class Trainer:
         self.loss_total.reset()
 
         self.encoder.train()
-        self.decoder.train()
+        for decoder in self.decoders:
+            decoder.train()
         self.discriminator.train()
 
         n_batches = self.args.epoch_len
@@ -323,7 +338,8 @@ class Trainer:
         self.eval_total.reset()
 
         self.encoder.eval()
-        self.decoder.eval()
+        for decoder in self.decoders:
+            decoder.eval()
         self.discriminator.eval()
 
         n_batches = int(np.ceil(self.args.epoch_len / 10))
@@ -396,13 +412,16 @@ class Trainer:
         save_path = self.expPath / filename
 
         torch.save({'encoder_state': self.encoder.module.state_dict(),
-                    'decoder_state': self.decoder.module.state_dict(),
                     'discriminator_state': self.discriminator.module.state_dict(),
                     'model_optimizer_state': self.model_optimizer.state_dict(),
                     'dataset': self.args.rank,
                     'd_optimizer_state': self.d_optimizer.state_dict()
                     },
                    save_path)
+        
+        for i, decoder in enumerate(self.decoders):
+            torch.save({'decoder_state': decoder.module.state_dict()},
+                       save_path.with_suffix("d_"+i+".state"))
 
         self.logger.debug(f'Saved model to {save_path}')
 

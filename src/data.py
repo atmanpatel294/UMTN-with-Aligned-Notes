@@ -354,7 +354,7 @@ class H5Dataset(data.Dataset):
         ret = None
         while ret is None:
             try:
-                ret, midi = self.try_random_slice()
+                ret, midi_chords, midi_durations = self.try_random_slice()
                 if self.augmentation:
                     ret = [ret, self.augmentation(ret)]
                 else:
@@ -370,7 +370,7 @@ class H5Dataset(data.Dataset):
         # if(midi is None):
         #     return torch.tensor(ret[0]), torch.tensor(ret[1]), None
         # return torch.tensor(ret[0]), torch.tensor(ret[1]), torch.LongTensor(midi)
-        return ret[0], ret[1], midi
+        return ret[0], ret[1], midi_chords, midi_durations
 
     def try_random_slice(self):
         h5file_path = random.choice(self.file_paths)
@@ -443,8 +443,8 @@ class H5Dataset(data.Dataset):
             midi_chords, midi_durations = self.read_midi_data(path, start_time_in_sec, self.seq_len/EncodedFilesDataset.WAV_FREQ)
             assert wav.shape[0] == self.seq_len
         if(midi_chords is None):
-            return wav.T, None
-        return wav.T, np.array(midi_chords).T
+            return wav.T, None, None
+        return wav.T, np.array(midi_chords).T, np.array(midi_durations).T
 
     def read_wav_data(self, dataset, path):
         if self.whole_samples:
@@ -492,10 +492,11 @@ class DatasetSet:
         x = torch.tensor([item[0] for item in batch])
         x_aug = torch.tensor([item[1] for item in batch])
         if batch[0][2] is None:
-            return x, x_aug, None
-        midi = torch.LongTensor([item[2] for item in batch])
+            return x, x_aug, None, None
+        midi_chords = torch.LongTensor([item[2] for item in batch])
+        midi_durations = torch.FloatTensor([item[3] for item in batch])
         # return [torch.tensor(x), torch.tensor(x_aug), torch.LongTensor(midi)]
-        return x, x_aug, midi
+        return x, x_aug, midi_chords, midi_durations
 
     def __init__(self, dir: Path, seq_len, args):
         if args.data_aug:

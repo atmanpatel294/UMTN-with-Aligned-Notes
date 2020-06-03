@@ -246,7 +246,7 @@ class Trainer:
 
         return total_loss
 
-    def train_batch(self, x, x_aug, x_midi=None, dset_num=None):
+    def train_batch(self, x, x_aug, x_midi_chords=None, x_midi_durations=None, dset_num=None):
         # print(x)
         x, x_aug= x.float(), x_aug.float()
         assert(dset_num is not None)
@@ -278,9 +278,9 @@ class Trainer:
         loss = (recon_loss.mean() + self.args.d_lambda * discriminator_wrong)
         
         aligned_loss = 0.0
-        if x_midi is not None:
+        if x_midi_chords is not None:
             # x_midi = x_midi.cpu()
-            h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
+            h, _  = self.midi_encoder(x_midi_chords, x_midi_durations) # size : (bs, hidden_size)
             h = h.view(z.shape)
             # print(">>>>>>>>>>>>>>>WOOOOOOHOOOOO<<<<<<<<<<<<<<<<<<<<")
             # print(x_midi.shape)
@@ -329,16 +329,17 @@ class Trainer:
                     dset_num = batch_num % self.args.n_datasets
 
                 # pdb.set_trace()
-                x, x_aug, x_midi = next(self.data[dset_num].train_iter)
+                x, x_aug, x_midi_chords, x_midi_durations = next(self.data[dset_num].train_iter)
                 # print(next(self.data[dset_num].train_iter))
                 # print("x: ", x)
                 # print("x_midi: ",x_midi)
 
                 x = wrap(x)
                 x_aug = wrap(x_aug)
-                if(x_midi is not None):
-                    x_midi = wrap(x_midi)
-                batch_loss = self.train_batch(x, x_aug, x_midi, dset_num)
+                if(x_midi_chords is not None):
+                    x_midi_chords = wrap(x_midi_chords)
+                    x_midi_durations = wrap(x_midi_durations)
+                batch_loss = self.train_batch(x, x_aug, x_midi_chords, x_midi_durations, dset_num)
 
                 train_enum.set_description(f'Train (loss: {batch_loss:.2f}) epoch {epoch}')
                 train_enum.update()

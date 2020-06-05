@@ -210,7 +210,7 @@ class Trainer:
         self.lr_manager.last_epoch = self.start_epoch
         self.lr_manager.step()
 
-    def eval_batch(self, x, x_aug, x_midi, dset_num):
+    def eval_batch(self, x, x_aug, x_midi_chords, x_midi_durations, dset_num):
         x, x_aug = x.float(), x_aug.float()
         
         assert(dset_num is not None)
@@ -235,8 +235,8 @@ class Trainer:
                      recon_loss.mean().data.item()
                      
         aligned_loss = 0.0
-        if x_midi is not None:
-            h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
+        if x_midi_chords is not None:
+            h, _  = self.midi_encoder(x_midi_chords, x_midi_durations) # size : (bs, hidden_size)
             h = h.view(z.shape)
             aligned_loss = F.mse_loss(h, z)
             total_loss += self.args.m_lambda * aligned_loss.mean().data.item()
@@ -370,14 +370,16 @@ class Trainer:
                 else:
                     dset_num = batch_num % self.args.n_datasets
 
-                x, x_aug, x_midi = next(self.data[dset_num].train_iter)
+                x, x_aug, x_midi_chords, x_midi_durations  = next(self.data[dset_num].train_iter)
 
                 x = wrap(x)
                 x_aug = wrap(x_aug)
-                if(x_midi is not None):
-                    x_midi = wrap(x_midi)
+                if(x_midi_chords is not None):
+                    x_midi_chords = wrap(x_midi_chords)
+                    x_midi_durations = wrap(x_midi_durations)
+                    
                 
-                batch_loss = self.eval_batch(x, x_aug, x_midi, dset_num)
+                batch_loss = self.eval_batch(x, x_aug, x_midi_chords, x_midi_durations, dset_num)
 
                 valid_enum.set_description(f'Test (loss: {batch_loss:.2f}) epoch {epoch}')
                 valid_enum.update()

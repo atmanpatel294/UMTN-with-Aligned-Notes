@@ -10,7 +10,7 @@ set -e -x
 CODE=src
 DATA=datasets/preprocessed
 
-EXP=musicnet_maestro_multi_decoders_with_durations
+EXP=musicnet_maestro_multi_decoders_with_durations_1
 export MASTER_PORT=29500
 
 python ${CODE}/train.py \

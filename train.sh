@@ -10,19 +10,20 @@ set -e -x
 CODE=src
 DATA=datasets/preprocessed
 
-EXP=musicnet_maestro_multi_decoders_with_durations_1
+EXP=musicnet_maestro_multiple_decoders
 export MASTER_PORT=29500
 
 python ${CODE}/train.py \
-    --data ${DATA}/Franz_Liszt \
+    --data ${DATA}/Bach_Solo_Cello \
            ${DATA}/Cambini_Wind_Quintet \
-           ${DATA}/Bach_Solo_Cello \
-           ${DATA}/Felix_Mendelssohn  \
+           ${DATA}/Beethoven_String_Quartet \
+           ${DATA}/Franz_Liszt \
+           ${DATA}/Felix_Mendelssohn \
            ${DATA}/Franz_Schubert \
            ${DATA}/Johann_Sebastian_Bach \
            ${DATA}/Ludwig_van_Beethoven\
-           ${DATA}/Beethoven_String_Quartet  \
-    --batch-size 24 \
+    --num-decoders 4 \
+    --batch-size 30 \
     --lr-decay 0.995 \
     --epoch-len 1000 \
     --num-workers 0 \
@@ -40,4 +41,5 @@ python ${CODE}/train.py \
     
 
 
+#     --checkpoint checkpoints/test/bestmodel_0.pth \
        #     ${DATA}/Beethoven_Accompanied_Violin \

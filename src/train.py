@@ -414,6 +414,10 @@ class Trainer:
             if val_loss < best_eval:
                 self.save_model(f'bestmodel_{self.args.rank}.pth')
                 best_eval = val_loss
+                for i, decoder in enumerate(self.decoders):
+                    decoder_path = self.expPath/f'd_{i}.pth'
+                    torch.save({'decoder_state': decoder.module.state_dict()},
+                            decoder_path)
 
             if not self.args.per_epoch:
                 self.save_model(f'lastmodel_{self.args.rank}.pth')
@@ -424,8 +428,9 @@ class Trainer:
                 torch.save([self.args,
                             epoch],
                            '%s/args.pth' % self.expPath)
-
+                
             self.logger.debug('Ended epoch')
+            
 
     def save_model(self, filename):
         save_path = self.expPath / filename
@@ -437,11 +442,6 @@ class Trainer:
                     'd_optimizer_state': self.d_optimizer.state_dict()
                     },
                    save_path)
-        
-        for i, decoder in enumerate(self.decoders):
-            decoder_path = str(self.expPath) + "_d_" + str(i) + ".pth"
-            torch.save({'decoder_state': decoder.module.state_dict()},
-                       decoder_path)
 
         self.logger.debug(f'Saved model to {save_path}')
 

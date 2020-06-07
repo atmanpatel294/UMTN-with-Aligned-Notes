@@ -40,6 +40,8 @@ parser.add_argument('--data',
                     metavar='D', type=Path, help='Data path', nargs='+')
 parser.add_argument('--checkpoint', default='',
                     metavar='C', type=str, help='Checkpoint path')
+parser.add_argument('--load-pretrained', default = '', type=str,
+                    help='Load pretrained weights')
 parser.add_argument('--load-optimizer', action='store_true')
 parser.add_argument('--per-epoch', action='store_true',
                     help='Save model per epoch')
@@ -167,9 +169,12 @@ class Trainer:
             # self.decoder.load_state_dict(states['decoder_state'])
             self.discriminator.load_state_dict(states['discriminator_state'])
 
+            for i, decoder in enumerate(self.decoders):
+                parent = os.path.dirname(args.checkpoint)
+                self.decoders[i].load_state_dict(torch.load(parent + f'/d_{i}.pth')['decoder_state'])
+            
             self.logger.info('Loaded checkpoint parameters')
             
-            # TODO: Fix the decoder load state
         else:
             self.start_epoch = 0
 

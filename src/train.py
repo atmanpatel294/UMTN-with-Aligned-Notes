@@ -104,6 +104,7 @@ parser.add_argument('--residual-channels', type=int, default=128,
                     help='Residual channels to use.')
 parser.add_argument('--skip-channels', type=int, default=128,
                     help='Skip channels to use.')
+parser.add_argument('--num-decoders', type=int, help='Number of decoders')
 
 # Z discriminator options
 parser.add_argument('--d-layers', type=int, default=3,
@@ -132,6 +133,7 @@ parser.add_argument('--m_lambda', type=float, default=1e-3,
 class Trainer:
     def __init__(self, args):
         self.args = args
+        # print('\n\n\n\n', self.args, '\n\n\n\n')
         self.args.n_datasets = len(self.args.data)
         self.expPath = Path('checkpoints') / args.expName
 
@@ -154,7 +156,10 @@ class Trainer:
 
         self.encoder = Encoder(args)
         # self.decoder = WaveNet(args)
-        self.decoders = [WaveNet(args) for _ in self.data]
+        if self.args.num_decoders:
+            self.decoders = [WaveNet(args) for _ in range(args.num_decoders)]
+        else:
+            self.decoders = [WaveNet(args) for _ in self.data]
         self.discriminator = ZDiscriminator(args)
         self.midi_encoder = MidiEncoder(args)
 
@@ -221,7 +226,10 @@ class Trainer:
         assert(dset_num is not None)
 
         z = self.encoder(x)
-        y = self.decoders[dset_num](x, z)
+        if dset_num < self.args.num_decoders-1:
+            y = self.decoders[dset_num](x, z)
+        else:
+            y = self.decoders[-1](x, z)
         z_logits = self.discriminator(z)
 
         z_classification = torch.max(z_logits, dim=1)[1]
@@ -269,7 +277,10 @@ class Trainer:
 
         # optimize G - reconstructs well, discriminator wrong
         z = self.encoder(x_aug)
-        y = self.decoders[dset_num](x, z)
+        if dset_num < self.args.num_decoders-1:
+            y = self.decoders[dset_num](x, z)
+        else:
+            y = self.decoders[-1](x, z)
         z_logits = self.discriminator(z)
         discriminator_wrong = - F.cross_entropy(z_logits, torch.tensor([dset_num] * x.size(0)).long().cuda()).mean()
 

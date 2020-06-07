@@ -41,6 +41,118 @@ def random_of_length(seq, length):
     end = start + length
     return seq[start: end]
 
+
+class MidiMultiHotFileDataset():
+    """
+    Uses music21 to read midi files
+    """
+    FILE_TYPES = ['midi', 'mid']
+    SEQ_LEN = 1.0
+    
+    def __init__(self, top, file_type=None):
+        self.path = Path(top)
+        self.noteToInt, self.intToNote = {}, {}
+        
+        self.file_types = [file_type] if file_type else self.FILE_TYPES
+        self.file_paths = self.filter_paths(self.path.glob('**/*'), self.file_types)
+        print("file_paths", self.file_paths)
+        
+    def extract_chords_duration_time_from_song(self, song, folder):
+        score = converter.parse(song)
+        score_chordify = score.chordify()
+        chords,durations,times = [],[],[]
+        val_counter = 0
+        for element in score_chordify:
+            if isinstance(element, note.Note):
+                note_ = str(element.pitch)
+                if folder=="/train/":
+                    if note_ not in self.noteToInt:
+                        # print(note_)
+                        self.noteToInt[note_] = val_counter
+                        self.intToNote[val_counter] = note_
+                        val_counter += 1
+                chords.append(note_)
+                durations.append(round(float(element.duration.quarterLength),3))
+                times.append(float(element.offset))
+            elif isinstance(element, chord.Chord):
+                for note_ in element.pitches:
+                    note_ = str(note_)
+                    if folder=="/train/":
+                        if note_ not in self.noteToInt:
+                            # print(note_)
+                            self.noteToInt[note_] = val_counter
+                            self.intToNote[val_counter] = note_
+                            val_counter += 1
+                chords.append([str(n) for n in element.pitches])
+                durations.append(round(float(element.duration.quarterLength),3))
+                times.append(float(element.offset))
+        
+        return [times,chords,durations]
+    
+    def chord_to_hot(self, chord):
+        ret = [0]*len(self.noteToInt)  #np.zeros(len(noteToInt))
+        # print(type(chord),chord)
+        if isinstance(chord, str):
+            if chord in self.noteToInt:
+                ret[self.noteToInt[chord]] = 1
+        if isinstance(chord, list):
+            for note in chord:
+                if note in self.noteToInt:
+                    ret[self.noteToInt[note]] = 1
+        # print(type(ret), ret)
+        return ret
+        
+
+    def dump_to_folder(self, output:Path):
+        folders = ['/train/','/test/','/val/']
+        # intToNote, noteToInt = {},{}
+        for folder in folders:
+            songList = [f for f in self.file_paths if folder in str(f)]
+            num_songs = len(songList)
+
+            original_scores = []
+
+            # with Pool(4) as p:
+            #     processed_song_list = p.map(self.extract_chords_duration_time_from_song, songList, folder)
+
+            processed_song_list = []
+            for song in songList:
+                processed_song_list.append(self.extract_chords_duration_time_from_song(song, folder))
+
+            if folder=="/train/":
+                # noteToInt, intToNote = _noteToInt, _intToNote
+                print("----------------  Indexing  ----------------")
+                print("number of unique notes : ", len(self.noteToInt))
+                pickle.dump(self.noteToInt, open(str(self.path) + "/noteToInt.pkl", "wb"))
+                pickle.dump(self.intToNote, open(str(self.path) + "/intToNote.pkl", "wb"))
+                print(self.noteToInt)
+                print("dict saved\n\n")
+
+            # indexedChords = [[chordToInt[c[0]] if c[0] in chordToInt else 0 for c in f] for f in processed_song_list]
+            # onehot_song_list = []
+            for i,song in enumerate(processed_song_list):
+                for j,chord in enumerate(song[1]):
+                    song[1][j] = self.chord_to_hot(chord)
+                processed_song_list[i] = song
+            
+
+
+            # combined = list(zip(originalTiming, indexedChords, originalDurations))
+            #save file
+            # print(processed_song_list)
+            for i,song in enumerate(songList):
+                output_file_path = output / song.relative_to(self.path).with_suffix('.pkl')
+                output_file_path.parent.mkdir(parents=True, exist_ok=True)
+                pickle.dump(np.array(processed_song_list[i]), open(str(output_file_path), "wb"))
+    
+    @staticmethod
+    def filter_paths(haystack, file_types):
+        return [f for f in haystack
+                if (f.is_file()
+                    and any(f.name.endswith(suffix) for suffix in file_types)
+                    and '__MACOSX' not in f.parts)]
+
+
 class MidiFileDataset():
     """
     Uses music21 to read midi files
@@ -322,7 +434,11 @@ class EncodedFilesDataset(data.Dataset):
 
 class H5Dataset(data.Dataset):
     def __init__(self, top, seq_len, dataset_name, epoch_len=10000, augmentation=None, short=False,
-                 whole_samples=False, cache=False):
+                 whole_samples=False, cache=False, mode=4):
+        #TODO send as argument
+        self.mode = mode
+
+
         self.path = Path(top)
         self.seq_len = seq_len
         self.epoch_len = epoch_len
@@ -373,6 +489,7 @@ class H5Dataset(data.Dataset):
         return ret[0], ret[1], midi
 
     def try_random_slice(self):
+        # print("try random sluice", self.file_paths)
         h5file_path = random.choice(self.file_paths)
         # print("TESTING:",h5file_path)
         if h5file_path in self.data_cache:
@@ -401,28 +518,52 @@ class H5Dataset(data.Dataset):
         pkl_path = h5path.with_suffix(".pkl")
         if not os.path.exists(pkl_path):
             return None, None
-        # print(pkl_path)
-        sTimes,chords,durations = pickle.load(open(pkl_path, 'rb'))
-        # read_data = pickle.load(open(pkl_path, 'rb'))
-        # sTimes = [t for _, _, t in read_data]
-        # chords = [c for c, _, _ in read_data]
-        # durations = [d for _, d, t in read_data]
 
-        target_chords, target_durations = np.zeros(16),np.zeros(16)
+        sTimes,chords,durations = pickle.load(open(pkl_path, 'rb'))
+        # print("time :", type(sTimes))
+        # print("durations: ", type(durations))
+
         end_time = start_time + slice_len
         idx = 0
-        for i,t in enumerate(sTimes):
-            if t >= start_time:
-                if t <= end_time:
-                    # target_chords.append(chords[i])
-                    # target_durations.append(durations[i])
-                    target_chords[idx] = chords[i]
-                    target_durations[idx] = durations[i]
-                    idx += 1
-            #ASSUMPTION : max midi size 16
-            # TODO : pass this as an argument
-            if t > end_time or idx>16:
-                break
+        if self.mode==1:
+            target_chords, target_durations = np.zeros(16),np.zeros(16)
+            for i,t in enumerate(sTimes):
+                if t >= start_time:
+                    if t <= end_time:
+                        # target_chords.append(chords[i])
+                        # target_durations.append(durations[i])
+                        target_chords[idx] = chords[i]
+                        target_durations[idx] = durations[i]
+                        idx += 1
+
+                #ASSUMPTION : max midi size 16
+                # TODO : pass this as an argument
+                if t > end_time or idx>=16:
+                    break
+
+        if self.mode==3:
+            target_chords, target_durations = np.zeros(int(slice_len*100)),np.zeros(int(slice_len*100))
+            sTimes = sTimes - sTimes[0]
+            time_prev_in_ms = 0
+            for i,time in enumerate(sTimes[1:]):
+                time_in_ms = int(time*100)
+                target_chords[time_prev_in_ms:time_in_ms] = chords[i-1]
+                time_prev_in_ms = time_in_ms
+            target_chords[time_in_ms:] = chords[-1]
+
+        if self.mode==4:
+            # Mode3 + onehot
+            target_chords = np.zeros((int(slice_len*100),len(chords[0])))
+            target_durations = np.zeros((int(slice_len*100),len(chords[0])))
+            sTimes = sTimes - sTimes[0]
+            time_prev_in_ms = 0
+            for i,time in enumerate(sTimes[1:]):
+                time_in_ms = int(time*100)
+                target_chords[time_prev_in_ms:time_in_ms] = chords[i-1]
+                time_prev_in_ms = time_in_ms
+            target_chords[time_in_ms:] = chords[-1]
+
+
         return target_chords, target_durations
     
     def read_wav_midi_data(self, dataset, path):
@@ -444,7 +585,10 @@ class H5Dataset(data.Dataset):
             assert wav.shape[0] == self.seq_len
         if(midi_chords is None):
             return wav.T, None
-        return wav.T, np.array(midi_chords).T
+        if self.mode==4:
+            return wav.T, np.array(midi_chords)
+        else:
+            return wav.T, np.array(midi_chords).T
 
     def read_wav_data(self, dataset, path):
         if self.whole_samples:
@@ -505,7 +649,7 @@ class DatasetSet:
 
         self.train_dataset = H5Dataset(dir / 'train', seq_len, epoch_len=10000000000,
                                        dataset_name=args.h5_dataset_name, augmentation=augmentation,
-                                       short=args.short, cache=False)
+                                       short=args.short, cache=False, mode=args.mode)
         
         self.train_loader = data.DataLoader(self.train_dataset,
                                             batch_size=args.batch_size,
@@ -517,7 +661,7 @@ class DatasetSet:
 
         self.valid_dataset = H5Dataset(dir / 'val', seq_len, epoch_len=1000000000,
                                        dataset_name=args.h5_dataset_name, augmentation=augmentation,
-                                       short=args.short)
+                                       short=args.short, mode=args.mode)
         self.valid_loader = data.DataLoader(self.valid_dataset,
                                             batch_size=args.batch_size,
                                             collate_fn=DatasetSet.my_collate,

@@ -24,7 +24,7 @@ from data import DatasetSet
 from wavenet import WaveNet
 from wavenet_models import cross_entropy_loss, Encoder, ZDiscriminator
 from utils import create_output_dir, LossMeter, wrap
-from midi_encoder import MidiEncoder
+from midi_encoder import MidiEncoder, OneHotMidiEncoder
 
 import pdb
 
@@ -43,6 +43,8 @@ parser.add_argument('--checkpoint', default='',
 parser.add_argument('--load-optimizer', action='store_true')
 parser.add_argument('--per-epoch', action='store_true',
                     help='Save model per epoch')
+parser.add_argument('--mode', type=int, default=4,
+                    help='Mode of training to follow')
 
 # Distributed
 parser.add_argument('--dist-url', default='env://',
@@ -156,6 +158,11 @@ class Trainer:
         self.discriminator = ZDiscriminator(args)
         self.midi_encoder = MidiEncoder(args)
 
+        if args.mode == 4:
+            self.onehot = True
+        if self.onehot:
+            self.onehot_midi_encoder = OneHotMidiEncoder(args, 86)
+
         if args.checkpoint:
             checkpoint_args_path = os.path.dirname(args.checkpoint) + '/args.pth'
             checkpoint_args = torch.load(checkpoint_args_path)
@@ -164,8 +171,24 @@ class Trainer:
             states = torch.load(args.checkpoint)
 
             self.encoder.load_state_dict(states['encoder_state'])
-            # self.decoder.load_state_dict(states['decoder_state'])
-            self.discriminator.load_state_dict(states['discriminator_state'])
+            print(states.keys())
+            # self.discriminator.load_state_dict(states['discriminator_state'])
+            
+            m0 = torch.load( os.path.dirname(args.checkpoint) + '/bestmodel_0.pth')
+            m1 = torch.load( os.path.dirname(args.checkpoint) + '/bestmodel_1.pth')
+            m2 = torch.load( os.path.dirname(args.checkpoint) + '/bestmodel_2.pth')
+            m5 = torch.load( os.path.dirname(args.checkpoint) + '/bestmodel_5.pth')
+
+            print(m1.keys(), m2.keys(), m5.keys())
+
+            for i in range(0, 5):
+                self.decoders[i].load_state_dict(m1['decoder_state'])
+
+
+            self.decoders[5].load_state_dict(m0['decoder_state'])
+            self.decoders[6].load_state_dict(m5['decoder_state'])
+            self.decoders[7].load_state_dict(m2['decoder_state'])
+
 
             self.logger.info('Loaded checkpoint parameters')
             
@@ -187,14 +210,20 @@ class Trainer:
             self.encoder = torch.nn.DataParallel(self.encoder).cuda()
             self.discriminator = torch.nn.DataParallel(self.discriminator).cuda()
             self.midi_encoder = torch.nn.DataParallel(self.midi_encoder).cuda()
+            if self.onehot:
+                self.onehot_midi_encoder = torch.nn.DataParallel(self.onehot_midi_encoder).cuda()
         self.decoders = [torch.nn.DataParallel(d).cuda() for d in self.decoders]
 
         # self.model_optimizer = optim.Adam(chain(self.encoder.parameters(),
         #                                         self.decoder.parameters(),
         #                                         self.midi_encoder.parameters()),
         #                                   lr=args.lr)
-        params = [{'params' : d.parameters()} for d in self.decoders] + [{'params': self.encoder.parameters()}] +\
+        if not self.onehot:
+            params = [{'params' : d.parameters()} for d in self.decoders] + [{'params': self.encoder.parameters()}] +\
             [{'params': self.midi_encoder.parameters()}]
+        else:
+            params = [{'params' : d.parameters()} for d in self.decoders] + [{'params': self.encoder.parameters()}] +\
+            [{'params': self.onehot_midi_encoder.parameters()}]
             
         # print(params)
         
@@ -236,7 +265,10 @@ class Trainer:
                      
         aligned_loss = 0.0
         if x_midi is not None:
-            h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
+            if self.onehot:
+                h, _ = self.onehot_midi_encoder(x_midi)
+            else:
+                h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
             h = h.view(z.shape)
             aligned_loss = F.mse_loss(h, z)
             total_loss += self.args.m_lambda * aligned_loss.mean().data.item()
@@ -280,7 +312,11 @@ class Trainer:
         aligned_loss = 0.0
         if x_midi is not None:
             # x_midi = x_midi.cpu()
-            h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
+            if self.onehot:
+                # print(x_midi)
+                h, _ = self.onehot_midi_encoder(x_midi)
+            else:
+                h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
             h = h.view(z.shape)
             # print(">>>>>>>>>>>>>>>WOOOOOOHOOOOO<<<<<<<<<<<<<<<<<<<<")
             # print(x_midi.shape)
@@ -313,7 +349,10 @@ class Trainer:
         for decoder in self.decoders:
             decoder.train()
         self.discriminator.train()
-        self.midi_encoder.train()
+        if self.onehot:
+            self.onehot_midi_encoder.train()
+        else:
+            self.midi_encoder.train()
         n_batches = self.args.epoch_len
 
         with tqdm(total=n_batches, desc='Train epoch %d' % epoch) as train_enum:
@@ -353,7 +392,10 @@ class Trainer:
         for decoder in self.decoders:
             decoder.eval()
         self.discriminator.eval()
-        self.midi_encoder.eval()
+        if self.onehot:
+            self.onehot_midi_encoder.eval()
+        else:
+            self.midi_encoder.eval()
 
         n_batches = int(np.ceil(self.args.epoch_len / 10))
 
@@ -436,7 +478,9 @@ class Trainer:
                    save_path)
         
         for i, decoder in enumerate(self.decoders):
-            decoder_path = str(self.expPath) + "_d_" + str(i) + ".pth"
+            # decoder_path = str(self.expPath) + "_d_" + str(i) + ".pth"
+            decoder_filename = "decoder_" + str(i) + ".pth"
+            decoder_path = self.expPath / decoder_filename
             torch.save({'decoder_state': decoder.module.state_dict()},
                        decoder_path)
 

@@ -12,6 +12,7 @@ from argparse import ArgumentParser
 import matplotlib
 import h5py
 import tqdm
+import pdb
 
 import utils
 import wavenet_models
@@ -46,30 +47,57 @@ def parse_args():
     return parser.parse_args()
 
 
-def extract_id(path):
-    decoder_id = str(path)[:-4].split('_')[-1]
-    return int(decoder_id)
+def extract_my_id(path):
+    pdb.set_trace()
+    # decoder_id = str(path)[:-4].split('_')[-1]
+    # decoder_id = str(path)[:-4].split('_')[-1]
+    print("asfadf", path)
+    if str(path).contains(1):
+        return 1
+    elif str(path).contains(6):
+        return 6
+    else:
+        return 1000
+        # assert(False)
+    # return decoder_id
+    # return int(decoder_id)
 
 
 def main(args):
+    # pdb.set_trace()
     print('Starting')
     matplotlib.use('agg')
 
-    checkpoints = args.checkpoint.parent.glob(args.checkpoint.name + '_*.pth')
-    checkpoints = [c for c in checkpoints if extract_id(c) in args.decoders]
-    assert len(checkpoints) >= 1, "No checkpoints found."
+    decoder_paths = args.checkpoint.parent.glob(args.checkpoint.name + '_*.pth')
+
+    
+    selected_decoder_paths = []
+    decoder_ids = []
+    print("sanity")
+    for p in decoder_paths:
+        curr_id = int(str(p)[-5])
+
+        if curr_id in args.decoders:
+            selected_decoder_paths.append(str(p))
+            decoder_ids.append(curr_id)
+
+    assert len(selected_decoder_paths) >= 1, "No checkpoints found."
+
+    print("decoder ids :", decoder_ids)
+    print("decoder_paths: ",selected_decoder_paths)
 
     model_args = torch.load(args.checkpoint.parent / 'args.pth')[0]
     encoder = wavenet_models.Encoder(model_args)
-    encoder.load_state_dict(torch.load(checkpoints[0])['encoder_state'])
+    ed_path = args.checkpoint.parent / 'bestmodel_0.pth' # "checkpoints/musicnet_maestro_multi_decoders/bestmodel_0.pth"
+    encoder.load_state_dict(torch.load(ed_path)['encoder_state'])
     encoder.eval()
     encoder = encoder.cuda()
 
     decoders = []
-    decoder_ids = []
-    for checkpoint in checkpoints:
+    # decoder_ids = [5]
+    for decoder_path in selected_decoder_paths:
         decoder = WaveNet(model_args)
-        decoder.load_state_dict(torch.load(checkpoint)['decoder_state'])
+        decoder.load_state_dict(torch.load(decoder_path)['decoder_state'])
         decoder.eval()
         decoder = decoder.cuda()
         if args.py:
@@ -78,8 +106,6 @@ def main(args):
             decoder = NVWavenetGenerator(decoder, args.rate * (args.split_size // 20), args.batch_size, 3)
 
         decoders += [decoder]
-        decoder_ids += [extract_id(checkpoint)]
-
     xs = []
     assert args.output_next_to_orig ^ (args.output is not None)
 
@@ -89,10 +115,13 @@ def main(args):
     else:
         file_paths = args.files
 
+
     if not args.skip_filter:
         file_paths = [f for f in file_paths if not '_' in str(f.name)]
 
+    
     for file_path in file_paths:
+        print("filepath:", file_path)
         if file_path.suffix == '.wav':
             data, rate = librosa.load(file_path, sr=16000)
             assert rate == 16000
@@ -117,8 +146,8 @@ def main(args):
 
     def save(x, decoder_ix, filepath):
         wav = utils.inv_mu_law(x.cpu().numpy())
-        print(f'X size: {x.shape}')
-        print(f'X min: {x.min()}, max: {x.max()}')
+        # print(f'X size: {x.shape}')
+        # print(f'X min: {x.min()}, max: {x.max()}')
 
         if args.output_next_to_orig:
             save_audio(wav.squeeze(), filepath.parent / f'{filepath.stem}_{decoder_ix}.wav', rate=args.rate)
@@ -135,6 +164,7 @@ def main(args):
         with utils.timeit("Generation timer"):
             for i, decoder_id in enumerate(decoder_ids):
                 yy[decoder_id] = []
+                
                 decoder = decoders[i]
                 for zz_batch in torch.split(zz, args.batch_size):
                     print(zz_batch.shape)
@@ -148,8 +178,11 @@ def main(args):
                 yy[decoder_id] = torch.cat(yy[decoder_id], dim=0)
                 del decoder
 
+    print("Saving Now")
     for decoder_ix, decoder_result in yy.items():
         for sample_result, filepath in zip(decoder_result, file_paths):
+            
+            # filepath = filepath[:-1]+"1"
             save(sample_result, decoder_ix, filepath)
 
 

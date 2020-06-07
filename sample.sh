@@ -6,12 +6,22 @@
 #
 #!/usr/bin/env bash
 
-DATE=`date +%d_%m_%Y`
+# DATE=`date +%d_%m_%Y`
+# DATASET='maestro'
+INSTRUMENT='Franz_Liszt'
+INPUT="datasets/preprocessed/${INSTRUMENT}"
 CODE=src
-OUTPUT=results/${DATE}/$1
+OUTPUT="results/test_data/${INSTRUMENT}"
+EXP="mode_3"
+DECODERS="2 4"
 
 echo "Sampling"
-python ${CODE}/data_samples.py --data-from-args checkpoints/$1/args.pth --output ${OUTPUT}  -n 4 --seq 80000
+python ${CODE}/data_samples.py --data ${INPUT} --output ${OUTPUT}  -n 3 --seq 10000
+
+### python ${CODE}/data_samples.py --data-from-args checkpoints/$1/args.pth --output ${OUTPUT}  -n 4 --seq 80000
 
 echo "Generating"
-python ${CODE}/run_on_files.py --files ${OUTPUT} --batch-size 4 --checkpoint checkpoints/$1/lastmodel --output-next-to-orig --decoders $2
+# echo checkpoints/$EXP/something
+python ${CODE}/run_on_files.py --files ${OUTPUT} --batch-size 4 --py --checkpoint checkpoints/$EXP/decoder --output results/$EXP/$INSTRUMENT --decoders $DECODERS  
+
+#--output-next-to-orig

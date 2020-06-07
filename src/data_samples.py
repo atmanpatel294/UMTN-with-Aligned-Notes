@@ -8,6 +8,8 @@ import data
 import argparse
 from pathlib import Path
 import tqdm
+import random
+import pdb
 
 from utils import inv_mu_law, save_audio
 import torch
@@ -28,25 +30,22 @@ def main():
     args = parser.parse_args()
 
     if args.data:
-        dataset_paths = args.data
-    elif args.data_from_args:
-        input_args, _ = torch.load(args.data_from_args)
-        dataset_paths = input_args.data
+        dataset_name = args.data[0].parts[-1]
+        print("creating dataset from ", dataset_name)
+        datasets = data.H5Dataset(args.data[0] / 'test', args.seq_len, 'wav', mode=1)
+
     else:
-        print('Please supply either --data or --data-from-args')
+        print("Please provide --data argument")
         return
-
-    if dataset_paths[0].is_file():
-        datasets = [data.H5Dataset(dataset_paths[0], args.seq_len, 'wav')]
-    else:
-        datasets = [data.H5Dataset(p / 'test', args.seq_len, 'wav')
-                    for p in dataset_paths]
-
+    
     for dataset_id, dataset in enumerate(datasets):
-        for i in tqdm.trange(args.n):
-            wav_data, _ = dataset[0]
-            wav_data = inv_mu_law(wav_data.numpy())
-            save_audio(wav_data, args.output / f'{dataset_id}/{i}.wav', rate=data.EncodedFilesDataset.WAV_FREQ)
+        if dataset_id>=args.n:
+            break
+        wav_data,_,_ = dataset
+        wav_data = inv_mu_law(wav_data)
+        file_name = "{}/{}.wav".format(args.output, dataset_id)
+        save_audio(wav_data, Path(file_name), rate=data.EncodedFilesDataset.WAV_FREQ)
+
 
 
 if __name__ == '__main__':

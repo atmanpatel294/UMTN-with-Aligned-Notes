@@ -175,8 +175,9 @@ class Trainer:
             states = torch.load(args.checkpoint)
 
             self.encoder.load_state_dict(states['encoder_state'])
-            # print(states.keys())
-            self.discriminator.load_state_dict(states['discriminator_state'])
+            print(states.keys())
+            if 'discriminator_state' in states:
+                self.discriminator.load_state_dict(states['discriminator_state'])
             
             for i, decoder in enumerate(self.decoders):
                 parent = os.path.dirname(args.checkpoint)

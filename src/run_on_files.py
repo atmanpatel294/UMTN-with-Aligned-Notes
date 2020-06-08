@@ -43,6 +43,7 @@ def parse_args():
     parser.add_argument('--output-next-to-orig', action='store_true')
     parser.add_argument('--skip-filter', action='store_true')
     parser.add_argument('--py', action='store_true', help='Use python generator')
+    parser.add_argument('--decoder-id', type=int)
 
     return parser.parse_args()
 
@@ -70,6 +71,11 @@ def main(args):
 
     decoder_paths = args.checkpoint.parent.glob(args.checkpoint.name + '_*.pth')
 
+    if(torch.cuda.device_count() > 0):
+        device = f'cuda:{args.decoder_id}'
+        print(device)
+    else:
+        device = 'cpu'
     
     selected_decoder_paths = []
     decoder_ids = []
@@ -80,18 +86,21 @@ def main(args):
         if curr_id in args.decoders:
             selected_decoder_paths.append(str(p))
             decoder_ids.append(curr_id)
-
-    assert len(selected_decoder_paths) >= 1, "No checkpoints found."
-
+    
     print("decoder ids :", decoder_ids)
     print("decoder_paths: ",selected_decoder_paths)
+    assert len(selected_decoder_paths) >= 1, "No checkpoints found."
+
+
 
     model_args = torch.load(args.checkpoint.parent / 'args.pth')[0]
+    print(model_args)
     encoder = wavenet_models.Encoder(model_args)
     ed_path = args.checkpoint.parent / 'bestmodel_0.pth' # "checkpoints/musicnet_maestro_multi_decoders/bestmodel_0.pth"
     encoder.load_state_dict(torch.load(ed_path)['encoder_state'])
     encoder.eval()
-    encoder = encoder.cuda()
+    # encoder = encoder.cuda()
+    encoder = encoder.to(device)
 
     decoders = []
     # decoder_ids = [5]
@@ -99,9 +108,10 @@ def main(args):
         decoder = WaveNet(model_args)
         decoder.load_state_dict(torch.load(decoder_path)['decoder_state'])
         decoder.eval()
-        decoder = decoder.cuda()
+        # decoder = decoder.cuda()
+        decoder = decoder.to(device)
         if args.py:
-            decoder = WavenetGenerator(decoder, args.batch_size, wav_freq=args.rate)
+            decoder = WavenetGenerator(decoder, args.batch_size, wav_freq=args.rate, device='cuda:'+str(args.decoder_id))
         else:
             decoder = NVWavenetGenerator(decoder, args.rate * (args.split_size // 20), args.batch_size, 3)
 
@@ -139,7 +149,8 @@ def main(args):
             data = data[:args.sample_len]
         else:
             args.sample_len = len(data)
-        xs.append(torch.tensor(data).unsqueeze(0).float().cuda())
+        # xs.append(torch.tensor(data).unsqueeze(0).float().cuda())
+        xs.append(torch.tensor(data).unsqueeze(0).float().to(device))
 
     xs = torch.stack(xs).contiguous()
     print(f'xs size: {xs.size()}')
@@ -172,6 +183,7 @@ def main(args):
                     audio_data = []
                     decoder.reset()
                     for cond in tqdm.tqdm(splits):
+                        print("Generating for a split")
                         audio_data += [decoder.generate(cond).cpu()]
                     audio_data = torch.cat(audio_data, -1)
                     yy[decoder_id] += [audio_data]

@@ -54,7 +54,7 @@ class QueuedConv1d(nn.Module):
 class WavenetGenerator(nn.Module):
     Q_ZERO = 128
 
-    def __init__(self, wavenet: WaveNet, batch_size=1, cond_repeat=800, wav_freq=16000):
+    def __init__(self, wavenet: WaveNet, batch_size=1, cond_repeat=800, wav_freq=16000, device='cuda:0'):
         super().__init__()
         self.wavenet = wavenet
         self.wavenet.shift_input = False
@@ -62,18 +62,19 @@ class WavenetGenerator(nn.Module):
         self.wav_freq = wav_freq
         self.batch_size = batch_size
         self.was_cuda = next(self.wavenet.parameters()).is_cuda
+        self.device = device
 
         x = torch.zeros(self.batch_size, 1, 1)
-        x = x.cuda() if self.was_cuda else x
+        x = x.to(self.device) if self.was_cuda else x
         self.wavenet.first_conv = QueuedConv1d(self.wavenet.first_conv, x)
 
         x = torch.zeros(self.batch_size, self.wavenet.residual_channels, 1)
-        x = x.cuda() if self.was_cuda else x
+        x = x.to(self.device) if self.was_cuda else x
         for layer in self.wavenet.layers:
             layer.causal = QueuedConv1d(layer.causal, x)
 
         if self.was_cuda:
-            self.wavenet.cuda()
+            self.wavenet.to(self.device)
         self.wavenet.eval()
 
     def forward(self, x, c=None):
@@ -87,16 +88,16 @@ class WavenetGenerator(nn.Module):
             self.batch_size = batch_size
 
         x = torch.zeros(self.batch_size, 1, 1)
-        x = x.cuda() if self.was_cuda else x
+        x = x.to(self.device) if self.was_cuda else x
         self.wavenet.first_conv.init_queue(x)
 
         x = torch.zeros(self.batch_size, self.wavenet.residual_channels, 1)
-        x = x.cuda() if self.was_cuda else x
+        x = x.to(self.device) if self.was_cuda else x
         for layer in self.wavenet.layers:
             layer.causal.init_queue(x)
 
         if self.was_cuda:
-            self.wavenet.cuda()
+            self.wavenet.to(self.device)
 
     @staticmethod
     def softmax_and_sample(prediction, method='sample'):
@@ -117,7 +118,7 @@ class WavenetGenerator(nn.Module):
         samples = torch.zeros(encodings.size(0), 1, encodings.size(2)*self.cond_repeat + 1)
         samples.fill_(self.Q_ZERO)
         samples = samples.long()
-        samples = samples.cuda() if encodings.is_cuda else samples
+        samples = samples.to(self.device) if encodings.is_cuda else samples
 
         with torch.no_grad():
             t0 = time.time()

@@ -10,7 +10,7 @@ set -e -x
 CODE=src
 DATA=onehot_dataset/preprocessed
 
-EXP=testc
+EXP=multihot
 export MASTER_PORT=29500
 
 python ${CODE}/train.py \

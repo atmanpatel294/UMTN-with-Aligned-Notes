@@ -10,7 +10,7 @@ set -e -x
 CODE=src
 DATA=onehot_dataset/preprocessed
 
-EXP=multihot
+EXP=test2
 export MASTER_PORT=29500
 
 python ${CODE}/train.py \
@@ -24,7 +24,7 @@ python ${CODE}/train.py \
         ${DATA}/Cambini_Wind_Quintet \
     --batch-size 3 \
     --lr-decay 0.995 \
-    --epoch-len 100 \
+    --epoch-len 10 \
     --num-workers 0 \
     --lr 1e-3 \
     --seq-len 12000 \
@@ -35,5 +35,7 @@ python ${CODE}/train.py \
     --blocks 4 \
     --data-aug \
     --grad-clip 1 \
-    --checkpoint checkpoints/pretrained_musicnet/bestmodel_0.pth \
-    --mode 4
+    --mode 4 \
+    --num-decoders 4 
+
+    # --checkpoint checkpoints/pretrained_musicnet/bestmodel_0.pth \

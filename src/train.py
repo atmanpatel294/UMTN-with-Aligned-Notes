@@ -120,13 +120,13 @@ parser.add_argument('--grad-clip', type=float,
                     help='If specified, clip gradients with specified magnitude')
 
 # Midi Encoder options
-parser.add_argument('--m_vocab_size', type=int, default=50000,
+parser.add_argument('--m-vocab-size', type=int, default=50000,
                     help='Total number of unique chords')
-parser.add_argument('--m_hidden_size', type=int, default=960,
+parser.add_argument('--m-hidden-size', type=int, default=960,
                     help='Hidden size of the LSTM')
-parser.add_argument('--m_embed_size', type=int, default=20,
+parser.add_argument('--m-embed-size', type=int, default=20,
                     help='Embeddings size of the chords')
-parser.add_argument('--m_lambda', type=float, default=1e-3,
+parser.add_argument('--m-lambda', type=float, default=5,
                     help='Aligned Loss Weight')
 
 class Trainer:
@@ -160,6 +160,8 @@ class Trainer:
 
         if args.mode == 4:
             self.onehot = True
+        else:
+            self.onehot = False
         if self.onehot:
             self.onehot_midi_encoder = OneHotMidiEncoder(args, 86)
 
@@ -167,7 +169,8 @@ class Trainer:
             checkpoint_args_path = os.path.dirname(args.checkpoint) + '/args.pth'
             checkpoint_args = torch.load(checkpoint_args_path)
 
-            self.start_epoch = checkpoint_args[-1] + 1
+            # self.start_epoch = checkpoint_args[-1] + 1
+            self.start_epoch = 0
             states = torch.load(args.checkpoint)
 
             self.encoder.load_state_dict(states['encoder_state'])
@@ -278,10 +281,18 @@ class Trainer:
 
         return total_loss
 
-    def train_batch(self, x, x_aug, x_midi=None, dset_num=None):
+    def train_batch(self, epoch, x, x_aug, x_midi=None, dset_num=None):
         # print(x)
         x, x_aug= x.float(), x_aug.float()
         assert(dset_num is not None)
+        
+        if epoch < 10:
+            for p in self.encoder.parameters():
+                p.requires_grad=False
+            for decoder in self.decoders:
+                for p in decoder.parameters():
+                    p.requires_grad=False
+        
         # Optimize D - discriminator right
         z = self.encoder(x)
         z_logits = self.discriminator(z)
@@ -306,7 +317,7 @@ class Trainer:
 
         recon_loss = cross_entropy_loss(y, x)
         self.losses_recon[dset_num].add(recon_loss.data.cpu().numpy().mean())
-        
+
         loss = (recon_loss.mean() + self.args.d_lambda * discriminator_wrong)
         
         aligned_loss = 0.0
@@ -318,14 +329,8 @@ class Trainer:
             else:
                 h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
             h = h.view(z.shape)
-            # print(">>>>>>>>>>>>>>>WOOOOOOHOOOOO<<<<<<<<<<<<<<<<<<<<")
-            # print(x_midi.shape)
-            # print(h.shape)
-            # print(z.shape)
-            # either have a discriminator or have a L2 loss
             aligned_loss = F.mse_loss(h, z)
             loss += self.args.m_lambda * aligned_loss
-
 
         self.model_optimizer.zero_grad()
         loss.backward()
@@ -336,6 +341,13 @@ class Trainer:
         self.model_optimizer.step()
 
         self.loss_total.add(loss.data.item())
+
+        if epoch < 10:
+            for p in self.encoder.parameters():
+                p.requires_grad=True
+            for decoder in self.decoders:
+                for p in decoder.parameters():
+                    p.requires_grad=True
 
         return loss.data.item()
 
@@ -377,7 +389,7 @@ class Trainer:
                 x_aug = wrap(x_aug)
                 if(x_midi is not None):
                     x_midi = wrap(x_midi)
-                batch_loss = self.train_batch(x, x_aug, x_midi, dset_num)
+                batch_loss = self.train_batch(epoch, x, x_aug, x_midi, dset_num)
 
                 train_enum.set_description(f'Train (loss: {batch_loss:.2f}) epoch {epoch}')
                 train_enum.update()

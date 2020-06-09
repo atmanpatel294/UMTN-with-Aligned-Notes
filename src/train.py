@@ -104,6 +104,7 @@ parser.add_argument('--residual-channels', type=int, default=128,
                     help='Residual channels to use.')
 parser.add_argument('--skip-channels', type=int, default=128,
                     help='Skip channels to use.')
+parser.add_argument('--num-decoders', type=int, help='Number of decoders')
 
 # Z discriminator options
 parser.add_argument('--d-layers', type=int, default=3,
@@ -154,7 +155,10 @@ class Trainer:
 
         self.encoder = Encoder(args)
         # self.decoder = WaveNet(args)
-        self.decoders = [WaveNet(args) for _ in self.data]
+        if self.args.num_decoders:
+            self.decoders = [WaveNet(args) for _ in range(args.num_decoders)]
+        else:
+            self.decoders = [WaveNet(args) for _ in self.data]
         self.discriminator = ZDiscriminator(args)
         self.midi_encoder = MidiEncoder(args)
 
@@ -175,22 +179,27 @@ class Trainer:
 
             self.encoder.load_state_dict(states['encoder_state'])
             print(states.keys())
-            # self.discriminator.load_state_dict(states['discriminator_state'])
+            if 'discriminator_state' in states:
+                self.discriminator.load_state_dict(states['discriminator_state'])
             
-            m0 = torch.load( os.path.dirname(args.checkpoint) + '/bestmodel_0.pth')
-            m1 = torch.load( os.path.dirname(args.checkpoint) + '/bestmodel_1.pth')
-            m2 = torch.load( os.path.dirname(args.checkpoint) + '/bestmodel_2.pth')
-            m5 = torch.load( os.path.dirname(args.checkpoint) + '/bestmodel_5.pth')
+            for i, decoder in enumerate(self.decoders):
+                parent = os.path.dirname(args.checkpoint)
+                self.decoders[i].load_state_dict(torch.load(parent + f'/d_{i}.pth')['decoder_state'])
 
-            print(m1.keys(), m2.keys(), m5.keys())
+            # m0 = torch.load( os.path.dirname(args.checkpoint) + '/bestmodel_0.pth')
+            # m1 = torch.load( os.path.dirname(args.checkpoint) + '/bestmodel_1.pth')
+            # m2 = torch.load( os.path.dirname(args.checkpoint) + '/bestmodel_2.pth')
+            # m5 = torch.load( os.path.dirname(args.checkpoint) + '/bestmodel_5.pth')
 
-            for i in range(0, 5):
-                self.decoders[i].load_state_dict(m1['decoder_state'])
+            # print(m1.keys(), m2.keys(), m5.keys())
+
+            # for i in range(0, 5):
+            #     self.decoders[i].load_state_dict(m1['decoder_state'])
 
 
-            self.decoders[5].load_state_dict(m0['decoder_state'])
-            self.decoders[6].load_state_dict(m5['decoder_state'])
-            self.decoders[7].load_state_dict(m2['decoder_state'])
+            # self.decoders[5].load_state_dict(m0['decoder_state'])
+            # self.decoders[6].load_state_dict(m5['decoder_state'])
+            # self.decoders[7].load_state_dict(m2['decoder_state'])
 
 
             self.logger.info('Loaded checkpoint parameters')
@@ -248,7 +257,10 @@ class Trainer:
         assert(dset_num is not None)
 
         z = self.encoder(x)
-        y = self.decoders[dset_num](x, z)
+        if dset_num < self.args.num_decoders-1:
+            y = self.decoders[dset_num](x, z)
+        else:
+            y = self.decoders[-1](x, z)
         z_logits = self.discriminator(z)
 
         z_classification = torch.max(z_logits, dim=1)[1]
@@ -307,7 +319,10 @@ class Trainer:
 
         # optimize G - reconstructs well, discriminator wrong
         z = self.encoder(x_aug)
-        y = self.decoders[dset_num](x, z)
+        if dset_num < self.args.num_decoders-1:
+            y = self.decoders[dset_num](x, z)
+        else:
+            y = self.decoders[-1](x, z)
         z_logits = self.discriminator(z)
         discriminator_wrong = - F.cross_entropy(z_logits, torch.tensor([dset_num] * x.size(0)).long().cuda()).mean()
 
@@ -465,6 +480,10 @@ class Trainer:
             if val_loss < best_eval:
                 self.save_model(f'bestmodel_{self.args.rank}.pth')
                 best_eval = val_loss
+                for i, decoder in enumerate(self.decoders):
+                    decoder_path = self.expPath/f'd_{i}.pth'
+                    torch.save({'decoder_state': decoder.module.state_dict()},
+                            decoder_path)
 
             if not self.args.per_epoch:
                 self.save_model(f'lastmodel_{self.args.rank}.pth')
@@ -489,12 +508,12 @@ class Trainer:
                     },
                    save_path)
         
-        for i, decoder in enumerate(self.decoders):
-            # decoder_path = str(self.expPath) + "_d_" + str(i) + ".pth"
-            decoder_filename = "decoder_" + str(i) + ".pth"
-            decoder_path = self.expPath / decoder_filename
-            torch.save({'decoder_state': decoder.module.state_dict()},
-                       decoder_path)
+        # for i, decoder in enumerate(self.decoders):
+        #     # decoder_path = str(self.expPath) + "_d_" + str(i) + ".pth"
+        #     decoder_filename = "decoder_" + str(i) + ".pth"
+        #     decoder_path = self.expPath / decoder_filename
+        #     torch.save({'decoder_state': decoder.module.state_dict()},
+        #                decoder_path)
 
         self.logger.debug(f'Saved model to {save_path}')
 

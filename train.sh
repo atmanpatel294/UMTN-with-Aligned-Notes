@@ -10,21 +10,22 @@ set -e -x
 CODE=src
 DATA=datasets/preprocessed
 
-EXP=multihot
+EXP=test1
 export MASTER_PORT=29500
 
 python ${CODE}/train.py \
-    --data ${DATA}/Franz_Liszt \
-        ${DATA}/Felix_Mendelssohn  \
-        ${DATA}/Franz_Schubert \
-        ${DATA}/Johann_Sebastian_Bach \
-        ${DATA}/Ludwig_van_Beethoven\
-        ${DATA}/Bach_Solo_Cello \
-        ${DATA}/Beethoven_String_Quartet  \
-        ${DATA}/Cambini_Wind_Quintet \
-    --batch-size 3 \
-    --lr-decay 0.98 \
-    --epoch-len 40 \
+    --data ${DATA}/Bach_Solo_Cello \
+           ${DATA}/Cambini_Wind_Quintet \
+           ${DATA}/Beethoven_String_Quartet \
+           ${DATA}/Beethoven_Accompanied_Violin \
+           ${DATA}/Franz_Liszt \
+           ${DATA}/Felix_Mendelssohn \
+           ${DATA}/Franz_Schubert \
+           ${DATA}/Johann_Sebastian_Bach \
+           ${DATA}/Ludwig_van_Beethoven\
+    --batch-size 12 \
+    --lr-decay 0.995 \
+    --epoch-len 1000 \
     --num-workers 0 \
     --lr 1e-3 \
     --seq-len 12000 \
@@ -35,6 +36,7 @@ python ${CODE}/train.py \
     --layers 14 \
     --blocks 4 \
     --data-aug \
-    --grad-clip 1 \
     --checkpoint checkpoints/pretrained_musicnet/bestmodel_0.pth \
-    --mode 3
+    --grad-clip 1 \
+    --mode 4 \
+    --num-decoders 5

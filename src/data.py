@@ -112,7 +112,7 @@ class MidiMultiHotFileDataset():
 
             original_scores = []
 
-            # with Pool(4) as p:
+            # with Pool(16) as p:
             #     processed_song_list = p.map(self.extract_chords_duration_time_from_song, songList, folder)
 
             processed_song_list = []

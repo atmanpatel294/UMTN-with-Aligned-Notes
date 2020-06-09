@@ -10,7 +10,7 @@ set -e -x
 CODE=src
 DATA=onehot_dataset/preprocessed
 
-EXP=multihot_1
+EXP=test1
 export MASTER_PORT=29500
 
 python ${CODE}/train.py \
@@ -23,7 +23,7 @@ python ${CODE}/train.py \
            ${DATA}/Franz_Schubert \
            ${DATA}/Johann_Sebastian_Bach \
            ${DATA}/Ludwig_van_Beethoven\
-    --batch-size 5 \
+    --batch-size 12 \
     --lr-decay 0.995 \
     --epoch-len 1000 \
     --num-workers 0 \

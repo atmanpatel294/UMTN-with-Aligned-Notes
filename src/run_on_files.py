@@ -48,20 +48,20 @@ def parse_args():
     return parser.parse_args()
 
 
-def extract_my_id(path):
-    pdb.set_trace()
-    # decoder_id = str(path)[:-4].split('_')[-1]
-    # decoder_id = str(path)[:-4].split('_')[-1]
-    print("asfadf", path)
-    if str(path).contains(1):
-        return 1
-    elif str(path).contains(6):
-        return 6
-    else:
-        return 1000
-        # assert(False)
-    # return decoder_id
-    # return int(decoder_id)
+# def extract_my_id(path):
+#     pdb.set_trace()
+#     # decoder_id = str(path)[:-4].split('_')[-1]
+#     # decoder_id = str(path)[:-4].split('_')[-1]
+#     print("asfadf", path)
+#     if str(path).contains(1):
+#         return 1
+#     elif str(path).contains(6):
+#         return 6
+#     else:
+#         return 1000
+#         # assert(False)
+#     # return decoder_id
+#     # return int(decoder_id)
 
 
 def main(args):
@@ -70,7 +70,7 @@ def main(args):
     matplotlib.use('agg')
 
     decoder_paths = args.checkpoint.parent.glob(args.checkpoint.name + '_*.pth')
-
+    print("IMP",decoder_paths)
     if(torch.cuda.device_count() > 0):
         device = f'cuda:{args.decoder_id}'
         print(device)
@@ -79,7 +79,6 @@ def main(args):
     
     selected_decoder_paths = []
     decoder_ids = []
-    print("sanity")
     for p in decoder_paths:
         curr_id = int(str(p)[-5])
 
@@ -94,7 +93,7 @@ def main(args):
 
 
     model_args = torch.load(args.checkpoint.parent / 'args.pth')[0]
-    print(model_args)
+    # print(model_args)
     encoder = wavenet_models.Encoder(model_args)
     ed_path = args.checkpoint.parent / 'bestmodel_0.pth' # "checkpoints/musicnet_maestro_multi_decoders/bestmodel_0.pth"
     encoder.load_state_dict(torch.load(ed_path)['encoder_state'])

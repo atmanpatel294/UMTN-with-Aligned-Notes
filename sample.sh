@@ -15,10 +15,10 @@
 INSTRUMENT='Bach_Solo_Cello'                #author/instrument folder
 INPUT="datasets/preprocessed/${INSTRUMENT}" #input for sampling
 CODE=src
-OUTPUT="results/test_data/${INSTRUMENT}"    #output for sampling -> input for run_on_files
-EXP="pretrained_musicnet"                   #location of decoder in checkpoints
+# OUTPUT="results/test_data/${INSTRUMENT}"  #output for sampling -> input for run_on_files
+OUTPUT="results/combined_test_data"
+EXP="final_warm_wav_midi_multihot/"         #location of decoder in checkpoints
 DECODERS="0 1 2 3 4"                        #decoders to generate output for
-BATCHSIZE=64
 
 # echo "Sampling"
 # python ${CODE}/data_samples.py --data ${INPUT} --output ${OUTPUT}  -n 5 --seq 80000
@@ -26,25 +26,10 @@ BATCHSIZE=64
 ### python ${CODE}/data_samples.py --data-from-args checkpoints/$1/args.pth --output ${OUTPUT}  -n 4 --seq 80000
 
 echo "Generating"
-python ${CODE}/run_on_files.py --files ${OUTPUT} --batch-size $BATCHSIZE --py --checkpoint checkpoints/$EXP/d --output results/$EXP/$INSTRUMENT --decoders $DECODERS --decoder-id 0
+# python ${CODE}/run_on_files.py --files ${OUTPUT} --batch-size $BATCHSIZE --py --checkpoint checkpoints/$EXP/d --output results/$EXP/$INSTRUMENT --decoders $DECODERS --decoder-id 0
+python ${CODE}/run_on_files.py --files ${OUTPUT} --batch-size 32 --py --checkpoint checkpoints/$EXP/d --output results/$EXP/ --decoders $DECODERS --decoder-id 0
 
-# python ${CODE}/run_on_files.py --files ${OUTPUT} --batch-size 32 --py --checkpoint checkpoints/$EXP/d --output results/$EXP/$INSTRUMENT --decoders 0 --decoder-id 0 &
-# python ${CODE}/run_on_files.py --files ${OUTPUT} --batch-size 32 --py --checkpoint checkpoints/$EXP/d --output results/$EXP/$INSTRUMENT --decoders 1 --decoder-id 1 &
-# python ${CODE}/run_on_files.py --files ${OUTPUT} --batch-size 32 --py --checkpoint checkpoints/$EXP/d --output results/$EXP/$INSTRUMENT --decoders 2 --decoder-id 2 &
-# python ${CODE}/run_on_files.py --files ${OUTPUT} --batch-size 32 --py --checkpoint checkpoints/$EXP/d --output results/$EXP/$INSTRUMENT --decoders 3 --decoder-id 3
-
-INSTRUMENT='Beethoven_Accompanied_Violin'
-OUTPUT="results/test_data/${INSTRUMENT}"
-python ${CODE}/run_on_files.py --files ${OUTPUT} --batch-size $BATCHSIZE --py --checkpoint checkpoints/$EXP/d --output results/$EXP/$INSTRUMENT --decoders $DECODERS --decoder-id 0
-
-INSTRUMENT='Beethoven_String_Quartet'
-OUTPUT="results/test_data/${INSTRUMENT}"
-python ${CODE}/run_on_files.py --files ${OUTPUT} --batch-size $BATCHSIZE --py --checkpoint checkpoints/$EXP/d --output results/$EXP/$INSTRUMENT --decoders $DECODERS --decoder-id 0
-
-INSTRUMENT='Cambini_Wind_Quintet'
-OUTPUT="results/test_data/${INSTRUMENT}"
-python ${CODE}/run_on_files.py --files ${OUTPUT} --batch-size $BATCHSIZE --py --checkpoint checkpoints/$EXP/d --output results/$EXP/$INSTRUMENT --decoders $DECODERS --decoder-id 0
-
-INSTRUMENT='Johann_Sebastian_Bach'
-OUTPUT="results/test_data/${INSTRUMENT}"
-python ${CODE}/run_on_files.py --files ${OUTPUT} --batch-size $BATCHSIZE --py --checkpoint checkpoints/$EXP/d --output results/$EXP/$INSTRUMENT --decoders $DECODERS --decoder-id 0
+# python ${CODE}/run_on_files.py --files ${OUTPUT} --batch-size 32 --py --checkpoint checkpoints/$EXP/d --output results/$EXP/ --decoders 0 --decoder-id 0 &
+# python ${CODE}/run_on_files.py --files ${OUTPUT} --batch-size 32 --py --checkpoint checkpoints/$EXP/d --output results/$EXP/ --decoders 1 --decoder-id 1 &
+# python ${CODE}/run_on_files.py --files ${OUTPUT} --batch-size 32 --py --checkpoint checkpoints/$EXP/d --output results/$EXP/ --decoders 4 --decoder-id 2 &
+# python ${CODE}/run_on_files.py --files ${OUTPUT} --batch-size 32 --py --checkpoint checkpoints/$EXP/d --output results/$EXP/ --decoders 3 --decoder-id 3

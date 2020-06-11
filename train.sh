@@ -8,22 +8,19 @@
 set -e -x
 
 CODE=src
-DATA=datasets/preprocessed
+DATA=/datasets/tmp/dl4s/datasets/processed/midi_wav
 
-EXP=test1
+EXP=cold_start_midi_small_model
 export MASTER_PORT=29500
 
 python ${CODE}/train.py \
-    --data ${DATA}/Bach_Solo_Cello \
-           ${DATA}/Cambini_Wind_Quintet \
-           ${DATA}/Beethoven_String_Quartet \
+    --data ${DATA}/Bach_Solo_Cello  \
+           ${DATA}/Bach_Solo_Piano \
            ${DATA}/Beethoven_Accompanied_Violin \
-           ${DATA}/Franz_Liszt \
-           ${DATA}/Felix_Mendelssohn \
-           ${DATA}/Franz_Schubert \
+           ${DATA}/Beethoven_String_Quartet  \
            ${DATA}/Johann_Sebastian_Bach \
-           ${DATA}/Ludwig_van_Beethoven\
-    --batch-size 12 \
+           ${DATA}/Ludwig_van_Beethoven \
+    --batch-size 30 \
     --lr-decay 0.995 \
     --epoch-len 1000 \
     --num-workers 0 \
@@ -33,10 +30,13 @@ python ${CODE}/train.py \
     --m-lambda 1 \
     --expName ${EXP} \
     --latent-d 64 \
-    --layers 14 \
-    --blocks 4 \
+    --layers 7 \
+    --blocks 2 \
     --data-aug \
-    --checkpoint checkpoints/pretrained_musicnet/bestmodel_0.pth \
     --grad-clip 1 \
     --mode 4 \
-    --num-decoders 5
+    --num-decoders 5 \
+    --d-channels 40 \
+    --encoder-channels 32
+
+#     --checkpoint checkpoints/pretrained_musicnet/bestmodel_0.pth \

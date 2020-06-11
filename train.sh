@@ -28,7 +28,6 @@ python ${CODE}/train.py \
     --seq-len 12000 \
     --d-lambda 1e-2 \
     --m-lambda 1 \
-    --expName ${EXP} \
     --latent-d 64 \
     --layers 7 \
     --blocks 2 \

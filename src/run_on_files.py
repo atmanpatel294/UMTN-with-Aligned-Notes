@@ -34,7 +34,7 @@ def parse_args():
                         help='Only output for the following decoder ID')
     parser.add_argument('--rate', type=int, default=16000,
                         help='Wav sample rate in samples/second')
-    parser.add_argument('--batch-size', type=int, default=6,
+    parser.add_argument('--batch-size', type=int, default=16,
                         help='Batch size during inference')
     parser.add_argument('--sample-len', type=int,
                         help='If specified, cuts sample lengths')
@@ -72,7 +72,8 @@ def main(args):
     decoder_paths = args.checkpoint.parent.glob(args.checkpoint.name + '_*.pth')
     print("IMP",decoder_paths)
     if(torch.cuda.device_count() > 0):
-        device = f'cuda:{args.decoder_id}'
+        print('cuda:{}'.format(args.decoder_id))
+        device = 'cuda:{}'.format(args.decoder_id)
         print(device)
     else:
         device = 'cpu'
@@ -125,8 +126,8 @@ def main(args):
         file_paths = args.files
 
 
-    if not args.skip_filter:
-        file_paths = [f for f in file_paths if not '_' in str(f.name)]
+    # if not args.skip_filter:
+    #     file_paths = [f for f in file_paths if '_' in str(f.name)]
 
     
     for file_path in file_paths:
@@ -142,7 +143,7 @@ def main(args):
             assert data.shape[-1] % args.rate == 0
             print(data.shape)
         else:
-            raise Exception(f'Unsupported filetype {file_path}')
+            raise Exception('Unsupported filetype {}'.format(file_path))
 
         if args.sample_len:
             data = data[:args.sample_len]
@@ -152,7 +153,7 @@ def main(args):
         xs.append(torch.tensor(data).unsqueeze(0).float().to(device))
 
     xs = torch.stack(xs).contiguous()
-    print(f'xs size: {xs.size()}')
+    # print(f'xs size: {xs.size()}')
 
     def save(x, decoder_ix, filepath):
         wav = utils.inv_mu_law(x.cpu().numpy())
@@ -160,7 +161,7 @@ def main(args):
         # print(f'X min: {x.min()}, max: {x.max()}')
 
         if args.output_next_to_orig:
-            save_audio(wav.squeeze(), filepath.parent / f'{filepath.stem}_{decoder_ix}.wav', rate=args.rate)
+            save_audio(wav.squeeze(), filepath.parent / '{}_{}.wav'.format(filepath.stem, decoder_ix), rate=args.rate)
         else:
             save_audio(wav.squeeze(), args.output / str(decoder_ix) / filepath.with_suffix('.wav').name, rate=args.rate)
 

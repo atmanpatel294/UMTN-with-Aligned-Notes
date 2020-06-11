@@ -45,6 +45,8 @@ parser.add_argument('--per-epoch', action='store_true',
                     help='Save model per epoch')
 parser.add_argument('--mode', type=int, default=4,
                     help='Mode of training to follow')
+parser.add_argument('--pretraining_epochs', type=int, default=10,
+                    help='number of epochs to freeze encoder decoder')
 
 # Distributed
 parser.add_argument('--dist-url', default='env://',
@@ -163,50 +165,58 @@ class Trainer:
         self.midi_encoder = MidiEncoder(args)
 
         if args.mode == 4:
-            self.onehot = True
+            # self.onehot = True
+            self.midi_encoder = OneHotMidiEncoder(args, 70)
         else:
             self.onehot = False
         if self.onehot:
             self.onehot_midi_encoder = OneHotMidiEncoder(args, 70)
 
+        # if self.onehot:
+        #     self.onehot_midi_encoder = OneHotMidiEncoder(args, 70)
+        
+        self.start_epoch = 0
+        
+        #load pretrained model
         if args.checkpoint:
+            print("Loading Pretrained models from ", args.checkpoint)
             checkpoint_args_path = os.path.dirname(args.checkpoint) + '/args.pth'
             checkpoint_args = torch.load(checkpoint_args_path)
 
             # self.start_epoch = checkpoint_args[-1] + 1
-            self.start_epoch = 0
+            
             states = torch.load(args.checkpoint)
-
-            self.encoder.load_state_dict(states['encoder_state'])
             print(states.keys())
+            #load encoder
+            self.encoder.load_state_dict(states['encoder_state'])
+            print("Encoder loaded")
+            #load discriminator
             if 'discriminator_state' in states:
                 self.discriminator.load_state_dict(states['discriminator_state'])
-            
+                print("Discriminator loaded")
+            #load midi encoder
+            if 'midi_encoder_state' in states:
+                midi_encoder_state = states['midi_encoder_state']
+                module_keys = []
+                for k in midi_encoder_state.keys():
+                    if k[:7] == 'module.':
+                        module_keys.append(k)
+                for k in module_keys:
+                    midi_encoder_state[k[7:]] = midi_encoder_state[k]
+                    del midi_encoder_state[k]
+                self.midi_encoder.load_state_dict(states['midi_encoder_state'])
+                print("Midi Encoder loaded")
+            #load decoders
             for i, decoder in enumerate(self.decoders):
                 parent = os.path.dirname(args.checkpoint)
-                self.decoders[i].load_state_dict(torch.load(parent + f'/d_{i}.pth')['decoder_state'])
-
-            # m0 = torch.load( os.path.dirname(args.checkpoint) + '/bestmodel_0.pth')
-            # m1 = torch.load( os.path.dirname(args.checkpoint) + '/bestmodel_1.pth')
-            # m2 = torch.load( os.path.dirname(args.checkpoint) + '/bestmodel_2.pth')
-            # m5 = torch.load( os.path.dirname(args.checkpoint) + '/bestmodel_5.pth')
-
-            # print(m1.keys(), m2.keys(), m5.keys())
-
-            # for i in range(0, 5):
-            #     self.decoders[i].load_state_dict(m1['decoder_state'])
-
-
-            # self.decoders[5].load_state_dict(m0['decoder_state'])
-            # self.decoders[6].load_state_dict(m5['decoder_state'])
-            # self.decoders[7].load_state_dict(m2['decoder_state'])
-
+                if i>=args.num_decoders-1:
+                    self.decoders[i].load_state_dict(torch.load(parent + f'/d_1.pth')['decoder_state']) #pick piano decoder
+                else:
+                    self.decoders[i].load_state_dict(torch.load(parent + f'/d_{i}.pth')['decoder_state'])
+            print("Decoders loaded")
 
             self.logger.info('Loaded checkpoint parameters')
-            
-            # TODO: Fix the decoder load state
-        else:
-            self.start_epoch = 0
+
 
         if args.distributed:
             work = 0
@@ -222,20 +232,20 @@ class Trainer:
             self.encoder = torch.nn.DataParallel(self.encoder).cuda()
             self.discriminator = torch.nn.DataParallel(self.discriminator).cuda()
             self.midi_encoder = torch.nn.DataParallel(self.midi_encoder).cuda()
-            if self.onehot:
-                self.onehot_midi_encoder = torch.nn.DataParallel(self.onehot_midi_encoder).cuda()
+            # if self.onehot:
+            #     self.onehot_midi_encoder = torch.nn.DataParallel(self.onehot_midi_encoder).cuda()
         self.decoders = [torch.nn.DataParallel(d).cuda() for d in self.decoders]
 
         # self.model_optimizer = optim.Adam(chain(self.encoder.parameters(),
         #                                         self.decoder.parameters(),
         #                                         self.midi_encoder.parameters()),
         #                                   lr=args.lr)
-        if not self.onehot:
-            params = [{'params' : d.parameters()} for d in self.decoders] + [{'params': self.encoder.parameters()}] +\
-            [{'params': self.midi_encoder.parameters()}]
-        else:
-            params = [{'params' : d.parameters()} for d in self.decoders] + [{'params': self.encoder.parameters()}] +\
-            [{'params': self.onehot_midi_encoder.parameters()}]
+        # if not self.onehot:
+        params = [{'params' : d.parameters()} for d in self.decoders] + [{'params': self.encoder.parameters()}] +\
+        [{'params': self.midi_encoder.parameters()}]
+        # else:
+        #     params = [{'params' : d.parameters()} for d in self.decoders] + [{'params': self.encoder.parameters()}] +\
+        #     [{'params': self.onehot_midi_encoder.parameters()}]
             
         # print(params)
         
@@ -280,10 +290,10 @@ class Trainer:
                      
         aligned_loss = 0.0
         if x_midi is not None:
-            if self.onehot:
-                h, _ = self.onehot_midi_encoder(x_midi)
-            else:
-                h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
+            # if self.onehot:
+            #     h, _ = self.onehot_midi_encoder(x_midi)
+            # else:
+            h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
             h = h.view(z.shape)
             aligned_loss = F.mse_loss(h, z)
             total_loss += self.args.m_lambda * aligned_loss.mean().data.item()
@@ -311,6 +321,8 @@ class Trainer:
         discriminator_right = F.cross_entropy(z_logits, torch.tensor([dset_num] * x.size(0)).long().cuda()).mean()
         self.loss_d_right.add(discriminator_right.data.item())
         loss = discriminator_right * self.args.d_lambda
+
+        self.loss_d_right.add(discriminator_right.data.item())
         self.d_optimizer.zero_grad()
         loss.backward()
         if self.args.grad_clip is not None:
@@ -335,18 +347,20 @@ class Trainer:
         self.losses_recon[dset_num].add(recon_loss.data.cpu().numpy().mean())
 
         loss = (recon_loss.mean() + self.args.d_lambda * discriminator_wrong)
+        # print("recon loss:", recon_loss.mean().item()," discriminator loss:",discriminator_wrong.item())
         
         aligned_loss = 0.0
         if x_midi is not None:
             # x_midi = x_midi.cpu()
-            if self.onehot:
-                # print(x_midi)
-                h, _ = self.onehot_midi_encoder(x_midi)
-            else:
-                h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
+            # if self.onehot:
+            #     # print(x_midi)
+            #     h, _ = self.onehot_midi_encoder(x_midi)
+            # else:
+            h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
             h = h.view(z.shape)
             aligned_loss = F.mse_loss(h, z)
             loss += self.args.m_lambda * aligned_loss
+            self.loss_m_aligned.add(aligned_loss.data.item())
 
         self.model_optimizer.zero_grad()
         loss.backward()
@@ -372,15 +386,16 @@ class Trainer:
             meter.reset()
         self.loss_d_right.reset()
         self.loss_total.reset()
+        self.loss_m_aligned.reset()
 
         self.encoder.train()
         for decoder in self.decoders:
             decoder.train()
         self.discriminator.train()
-        if self.onehot:
-            self.onehot_midi_encoder.train()
-        else:
-            self.midi_encoder.train()
+        # if self.onehot:
+        #     self.onehot_midi_encoder.train()
+        # else:
+        self.midi_encoder.train()
         n_batches = self.args.epoch_len
 
         with tqdm(total=n_batches, desc='Train epoch %d' % epoch) as train_enum:
@@ -420,10 +435,10 @@ class Trainer:
         for decoder in self.decoders:
             decoder.eval()
         self.discriminator.eval()
-        if self.onehot:
-            self.onehot_midi_encoder.eval()
-        else:
-            self.midi_encoder.eval()
+        # if self.onehot:
+        #     self.onehot_midi_encoder.eval()
+        # else:
+        self.midi_encoder.eval()
 
         n_batches = int(np.ceil(self.args.epoch_len / 10))
 
@@ -457,7 +472,7 @@ class Trainer:
         return ', '.join('{:.4f}'.format(x) for x in losses)
 
     def train_losses(self):
-        meters = [*self.losses_recon, self.loss_d_right]
+        meters = [*self.losses_recon, self.loss_d_right, self.loss_m_aligned]
         return self.format_losses(meters)
 
     def eval_losses(self):
@@ -505,7 +520,8 @@ class Trainer:
                     'discriminator_state': self.discriminator.module.state_dict(),
                     'model_optimizer_state': self.model_optimizer.state_dict(),
                     'dataset': self.args.rank,
-                    'd_optimizer_state': self.d_optimizer.state_dict()
+                    'd_optimizer_state': self.d_optimizer.state_dict(),
+                    'midi_encoder_state': self.midi_encoder.state_dict()
                     },
                    save_path)
         

@@ -167,7 +167,7 @@ class Trainer:
         else:
             self.onehot = False
         if self.onehot:
-            self.onehot_midi_encoder = OneHotMidiEncoder(args, 86)
+            self.onehot_midi_encoder = OneHotMidiEncoder(args, 70)
 
         if args.checkpoint:
             checkpoint_args_path = os.path.dirname(args.checkpoint) + '/args.pth'
@@ -298,17 +298,18 @@ class Trainer:
         x, x_aug= x.float(), x_aug.float()
         assert(dset_num is not None)
         
-        if epoch < 10:
-            for p in self.encoder.parameters():
-                p.requires_grad=False
-            for decoder in self.decoders:
-                for p in decoder.parameters():
-                    p.requires_grad=False
+        # if epoch < 10:
+        #     for p in self.encoder.parameters():
+        #         p.requires_grad=False
+        #     for decoder in self.decoders:
+        #         for p in decoder.parameters():
+        #             p.requires_grad=False
         
         # Optimize D - discriminator right
         z = self.encoder(x)
         z_logits = self.discriminator(z)
         discriminator_right = F.cross_entropy(z_logits, torch.tensor([dset_num] * x.size(0)).long().cuda()).mean()
+        self.loss_d_right.add(discriminator_right.data.item())
         loss = discriminator_right * self.args.d_lambda
         self.d_optimizer.zero_grad()
         loss.backward()
@@ -357,12 +358,12 @@ class Trainer:
 
         self.loss_total.add(loss.data.item())
 
-        if epoch < 10:
-            for p in self.encoder.parameters():
-                p.requires_grad=True
-            for decoder in self.decoders:
-                for p in decoder.parameters():
-                    p.requires_grad=True
+        # if epoch < 10:
+        #     for p in self.encoder.parameters():
+        #         p.requires_grad=True
+        #     for decoder in self.decoders:
+        #         for p in decoder.parameters():
+        #             p.requires_grad=True
 
         return loss.data.item()
 

@@ -267,6 +267,7 @@ class Trainer:
         z = self.encoder(x)
         z_logits = self.discriminator(z)
         discriminator_right = F.cross_entropy(z_logits, torch.tensor([dset_num] * x.size(0)).long().cuda()).mean()
+        self.loss_d_right.add(discriminator_right.data.item())
         loss = discriminator_right * self.args.d_lambda
         self.d_optimizer.zero_grad()
         loss.backward()

@@ -555,13 +555,23 @@ class H5Dataset(data.Dataset):
             # Mode3 + onehot
             target_chords = np.zeros((int(slice_len*100),len(chords[0])))
             target_durations = np.zeros((int(slice_len*100),len(chords[0])))
-            sTimes = sTimes - sTimes[0]
-            time_prev_in_ms = 0
-            for i,time in enumerate(sTimes[1:]):
-                time_in_ms = int(time*100)
-                target_chords[time_prev_in_ms:time_in_ms] = chords[i-1]
-                time_prev_in_ms = time_in_ms
-            target_chords[time_in_ms:] = chords[-1]
+            
+            end_time = start_time + slice_len
+            # print("start time: ",start_time, " end time: ",end_time, "\n ")
+            target_chords = np.zeros((int(slice_len*100),len(chords[0])))
+            # target_durations = np.zeros((int(slice_len*100),len(chords[0])))
+            # print("len of chords: ", len(chords[0]))
+
+            for i,t in enumerate(sTimes):
+                if t+durations[i] >= start_time and t < end_time:
+                    s = int(max(t-start_time, 0)*100)
+                    e = int(min(t + durations[i] - start_time, slice_len)*100)
+                    if e>s:
+                        target_chords[s:e] = [np.add(target_chords[j],chords[i]) for j in range(s,e)]
+                if t>end_time:
+                    break
+
+            target_chords.clip(0,1)
 
 
         return target_chords, target_durations

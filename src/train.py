@@ -45,6 +45,8 @@ parser.add_argument('--load-pretrained', default = '', type=str,
 parser.add_argument('--load-optimizer', action='store_true')
 parser.add_argument('--per-epoch', action='store_true',
                     help='Save model per epoch')
+parser.add_argument('--pretraining_epochs', type=int, default=10,
+                    help='number of epochs to freeze encoder decoder')
 
 # Distributed
 parser.add_argument('--dist-url', default='env://',
@@ -173,7 +175,7 @@ class Trainer:
 
             #load_encoder
             self.encoder.load_state_dict(states['encoder_state'])
-            print("Encoder loaded")
+            self.logger.debug("Encoder loaded")
             
             #load_decoder
             for i, decoder in enumerate(self.decoders):
@@ -182,11 +184,11 @@ class Trainer:
                     self.decoders[i].load_state_dict(torch.load(parent + f'/d_1.pth')['decoder_state']) #pick piano decoder
                 else:
                     self.decoders[i].load_state_dict(torch.load(parent + f'/d_{i}.pth')['decoder_state'])
-                print("Decoders loaded")
+                self.logger.debug("Decoders loaded")
 
-            print("Checkpoint loaded")
+            self.logger.debug("Pretrained model loaded")
 
-        if args.checkpoint:
+        else if args.checkpoint:
             checkpoint_args_path = os.path.dirname(args.checkpoint) + '/args.pth'
             checkpoint_args = torch.load(checkpoint_args_path)
 
@@ -195,13 +197,13 @@ class Trainer:
 
             #load_encoder
             self.encoder.load_state_dict(states['encoder_state'])
-            print("Encoder loaded")
+            self.logger.debug("Encoder loaded from checkpoint")
             
             # self.decoder.load_state_dict(states['decoder_state'])
             # self.discriminator.load_state_dict(states['discriminator_state'])
             if 'discriminator_state' in states:
                 self.discriminator.load_state_dict(states['discriminator_state'])
-                print("Discriminator loaded")
+                self.logger.debug("Discriminator loaded from checkpoint")
                  
             if 'midi_encoder_state' in states:
                 midi_encoder_state = states['midi_encoder_state']
@@ -213,11 +215,13 @@ class Trainer:
                     midi_encoder_state[k[7:]] = midi_encoder_state[k]
                     del midi_encoder_state[k]
                 self.midi_encoder.load_state_dict(states['midi_encoder_state'])
-                print("Midi Encoder loaded")
+                self.logger.debug("Midi Encoder loaded from checkpoint")
 
             for i, decoder in enumerate(self.decoders):
                 parent = os.path.dirname(args.checkpoint)
                 self.decoders[i].load_state_dict(torch.load(parent + f'/d_{i}.pth')['decoder_state'])
+                
+            self.logger.debug("Decoder loaded from pretrained")
             
             self.logger.info('Loaded checkpoint parameters')
             
@@ -295,7 +299,6 @@ class Trainer:
             aligned_loss = F.mse_loss(h, z)
             total_loss += self.args.m_lambda * aligned_loss.mean().data.item()
 
-
         self.eval_total.add(total_loss)
 
         return total_loss
@@ -304,6 +307,15 @@ class Trainer:
         # print(x)
         x, x_aug= x.float(), x_aug.float()
         assert(dset_num is not None)
+
+        if args.load_pretrained:
+            if epoch < self.args.pretraining_epochs:
+                for p in self.encoder.parameters():
+                    p.requires_grad=False
+                for decoder in self.decoders:
+                    for p in decoder.parameters():
+                        p.requires_grad=False
+
         # Optimize D - discriminator right
         z = self.encoder(x)
         z_logits = self.discriminator(z)
@@ -340,14 +352,9 @@ class Trainer:
             # x_midi = x_midi.cpu()
             h, _  = self.midi_encoder(x_midi_chords, x_midi_durations) # size : (bs, hidden_size)
             h = h.view(z.shape)
-            # print(">>>>>>>>>>>>>>>WOOOOOOHOOOOO<<<<<<<<<<<<<<<<<<<<")
-            # print(x_midi.shape)
-            # print(h.shape)
-            # print(z.shape)
-            # either have a discriminator or have a L2 loss
             aligned_loss = F.mse_loss(h, z)
             loss += self.args.m_lambda * aligned_loss
-
+            self.loss_m_aligned.add(aligned_loss.data.item())
 
         self.model_optimizer.zero_grad()
         loss.backward()
@@ -359,6 +366,14 @@ class Trainer:
 
         self.loss_total.add(loss.data.item())
 
+        if args.load_pretrained:
+            if epoch < self.args.pretraining_epochs:
+                for p in self.encoder.parameters():
+                    p.requires_grad=True
+                for decoder in self.decoders:
+                    for p in decoder.parameters():
+                        p.requires_grad=True
+
         return loss.data.item()
 
     def train_epoch(self, epoch):
@@ -366,6 +381,7 @@ class Trainer:
             meter.reset()
         self.loss_d_right.reset()
         self.loss_total.reset()
+        self.loss_m_aligned.reset()
 
         self.encoder.train()
         for decoder in self.decoders:
@@ -448,7 +464,7 @@ class Trainer:
         return ', '.join('{:.4f}'.format(x) for x in losses)
 
     def train_losses(self):
-        meters = [*self.losses_recon, self.loss_d_right]
+        meters = [*self.losses_recon, self.loss_d_right, self.loss_m_aligned]
         return self.format_losses(meters)
 
     def eval_losses(self):

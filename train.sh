@@ -8,38 +8,34 @@
 set -e -x
 
 CODE=src
-DATA=datasets/preprocessed
+DATA=/datasets/tmp/dl4s/datasets/processed/midi_wav_0
 
-EXP=musicnet_maestro_multiple_decoders
+EXP=warmstart_multiple_mode_1_full_model
 export MASTER_PORT=29500
 
+
 python ${CODE}/train.py \
+    --expName ${EXP} \
     --data ${DATA}/Bach_Solo_Cello \
-           ${DATA}/Cambini_Wind_Quintet \
+           ${DATA}/Bach_Solo_Piano \
+           ${DATA}/Beethoven_Accompanied_Violin \
            ${DATA}/Beethoven_String_Quartet \
-           ${DATA}/Franz_Liszt \
-           ${DATA}/Felix_Mendelssohn \
-           ${DATA}/Franz_Schubert \
            ${DATA}/Johann_Sebastian_Bach \
-           ${DATA}/Ludwig_van_Beethoven\
-    --num-decoders 4 \
-    --batch-size 30 \
-    --lr-decay 0.995 \
+           ${DATA}/Ludwig_van_Beethoven \
+    --batch-size 8 \
+    --lr-decay 0.95 \
     --epoch-len 1000 \
     --num-workers 0 \
     --lr 1e-3 \
     --seq-len 12000 \
     --d-lambda 1e-2 \
-    --expName ${EXP} \
+    --m-lambda 1 \
     --latent-d 64 \
+    --layers 14 \
+    --blocks 4 \
     --data-aug \
     --grad-clip 1 \
-    --encoder-channels 32 \
-    --blocks 2 \
-    --layers 7 \
-    --d-channels 40
-    
-
-
-#     --checkpoint checkpoints/test/bestmodel_0.pth \
-       #     ${DATA}/Beethoven_Accompanied_Violin \
+    --mode 1 \
+    --num-decoders 5 \
+    --load-pretrained checkpoints/pretrained/bestmodel_0.pth \
+    --pretraining_epochs 20

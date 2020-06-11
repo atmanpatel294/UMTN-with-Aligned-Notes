@@ -162,6 +162,29 @@ class Trainer:
             self.decoders = [WaveNet(args) for _ in self.data]
         self.discriminator = ZDiscriminator(args)
         self.midi_encoder = MidiEncoder(args)
+        
+        if args.load_pretrained:
+            pretrained_args_path = os.path.dirname(args.load_pretrained) + '/args.pth'
+            pretrained_args = torch.load(pretrained_args_path)
+
+            # self.start_epoch = pretrained_args[-1] + 1
+            self.start_epoch = 0
+            states = torch.load(args.load_pretrained)
+
+            #load_encoder
+            self.encoder.load_state_dict(states['encoder_state'])
+            print("Encoder loaded")
+            
+            #load_decoder
+            for i, decoder in enumerate(self.decoders):
+                parent = os.path.dirname(args.load_pretrained)
+                if i>=args.num_decoders-1:
+                    self.decoders[i].load_state_dict(torch.load(parent + f'/d_1.pth')['decoder_state']) #pick piano decoder
+                else:
+                    self.decoders[i].load_state_dict(torch.load(parent + f'/d_{i}.pth')['decoder_state'])
+                print("Decoders loaded")
+
+            print("Checkpoint loaded")
 
         if args.checkpoint:
             checkpoint_args_path = os.path.dirname(args.checkpoint) + '/args.pth'
@@ -170,9 +193,27 @@ class Trainer:
             self.start_epoch = checkpoint_args[-1] + 1
             states = torch.load(args.checkpoint)
 
+            #load_encoder
             self.encoder.load_state_dict(states['encoder_state'])
+            print("Encoder loaded")
+            
             # self.decoder.load_state_dict(states['decoder_state'])
-            self.discriminator.load_state_dict(states['discriminator_state'])
+            # self.discriminator.load_state_dict(states['discriminator_state'])
+            if 'discriminator_state' in states:
+                self.discriminator.load_state_dict(states['discriminator_state'])
+                print("Discriminator loaded")
+                 
+            if 'midi_encoder_state' in states:
+                midi_encoder_state = states['midi_encoder_state']
+                module_keys = []
+                for k in midi_encoder_state.keys():
+                    if k[:7] == 'module.':
+                        module_keys.append(k)
+                for k in module_keys:
+                    midi_encoder_state[k[7:]] = midi_encoder_state[k]
+                    del midi_encoder_state[k]
+                self.midi_encoder.load_state_dict(states['midi_encoder_state'])
+                print("Midi Encoder loaded")
 
             for i, decoder in enumerate(self.decoders):
                 parent = os.path.dirname(args.checkpoint)
@@ -456,7 +497,8 @@ class Trainer:
                     'discriminator_state': self.discriminator.module.state_dict(),
                     'model_optimizer_state': self.model_optimizer.state_dict(),
                     'dataset': self.args.rank,
-                    'd_optimizer_state': self.d_optimizer.state_dict()
+                    'd_optimizer_state': self.d_optimizer.state_dict(),
+                    'midi_encoder_state': self.midi_encoder.state_dict()
                     },
                    save_path)
 

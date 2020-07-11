@@ -17,8 +17,8 @@ INPUT="datasets/preprocessed/${INSTRUMENT}" #input for sampling
 CODE=src
 # OUTPUT="results/test_data/${INSTRUMENT}"  #output for sampling -> input for run_on_files
 OUTPUT="results/combined_test_data"
-EXP="final_warm_wav_midi_multihot/"         #location of decoder in checkpoints
-DECODERS="0 1 2 3 4"                        #decoders to generate output for
+EXP="final_warm_wav_midi_multihot_run3/"         #location of decoder in checkpoints
+DECODERS="0"                        #decoders to generate output for
 
 # echo "Sampling"
 # python ${CODE}/data_samples.py --data ${INPUT} --output ${OUTPUT}  -n 5 --seq 80000

@@ -201,12 +201,11 @@ class MidiFileDataset():
             # songList = [f for f in os.listdir(data_dir+folder) if not f.startswith('.')]
             songList = [f for f in self.file_paths if folder in str(f)]
             
-
             num_songs = len(songList)
-            # print("\n\nFolder :",folder,", num songs:",num_songs)
 
             original_scores = []
 
+            # multithreading
             with Pool(16) as p:
                 processed_song_list = p.map(self.extract_chords_duration_time_from_song, songList)
             
@@ -216,19 +215,15 @@ class MidiFileDataset():
                 chordToInt = dict(zip(uniqueChords, list(range(1, len(uniqueChords)+1))))
 
                 # Map unique durations to integers
-                uniqueDurations = np.unique([i for s in processed_song_list for i in s[2]])
-                # durationToInt = dict(zip(uniqueDurations, list(range(1, len(uniqueDurations)+1))))
+                # uniqueDurations = np.unique([i for s in processed_song_list for i in s[2]])
 
                 intToChord = {i: c for c, i in chordToInt.items()}
-                # intToDuration = {i: c for c, i in durationToInt.items()}
 
                 print("number of unique chords : ", len(uniqueChords))
-                print("number of unique durations", len(uniqueDurations))
+                # print("number of unique durations", len(uniqueDurations))
 
                 pickle.dump(chordToInt, open(str(self.path) + "/chordToInt.pkl", "wb"))
-                # pickle.dump(durationToInt, open(data_dir+"durationToInt.pkl", "wb"))
                 pickle.dump(intToChord, open(str(self.path) + "/intToChord.pkl", "wb"))
-                # pickle.dump(intToDuration, open(data_dir+"intToDuration.pkl", "wb"))
 
             # indexedChords = [[chordToInt[c[0]] if c[0] in chordToInt else 0 for c in f] for f in processed_song_list]
             for song in processed_song_list:
@@ -241,8 +236,7 @@ class MidiFileDataset():
             # indexedDurations = originalDurations #[[durationToInt[c] for c in f] for f in originalDurations]
 
             # combined = list(zip(originalTiming, indexedChords, originalDurations))
-            #save file
-            # print(processed_song_list)
+            # save files
             for i,song in enumerate(songList):
                 output_file_path = output / song.relative_to(self.path).with_suffix('.pkl')
                 output_file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -520,8 +514,6 @@ class H5Dataset(data.Dataset):
             return None, None
 
         sTimes,chords,durations = pickle.load(open(pkl_path, 'rb'))
-        # print("time :", type(sTimes))
-        # print("durations: ", type(durations))
 
         end_time = start_time + slice_len
         idx = 0

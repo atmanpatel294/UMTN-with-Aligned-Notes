@@ -52,9 +52,9 @@ class MidiEncoder(nn.Module):
     def init_hidden(self, bs):
         return torch.zeros(bs, self.hidden_size).type(torch.FloatTensor).cuda()
 
-class OneHotMidiEncoder(nn.Module):
+class MultiHotMidiEncoder(nn.Module):
     def __init__(self, args, encod_size):
-        super(OneHotMidiEncoder, self).__init__()
+        super(MultiHotMidiEncoder, self).__init__()
         self.vocab_size = args.m_vocab_size
         self.hidden_size = args.m_hidden_size
         # self.embeddings = nn.Embedding(args.m_vocab_size, args.m_embed_size)
@@ -63,15 +63,12 @@ class OneHotMidiEncoder(nn.Module):
 
     def forward(self, inputs):
         batch_size, seq_len, encod_size = inputs.size()
-        # print("input size", inputs.size())
         hidden = self.init_hidden(batch_size)
         cell = self.init_hidden(batch_size)
         # inputs = self.embeddings(inputs)
                 
         for i in range(seq_len):
-
             lstm_input = self.embeddings(inputs[:,i,:].float())
-            # print("lstm input:  ", lstm_input)
             hidden, cell = self.lstm.forward(lstm_input, hidden, cell)
         return hidden, cell
 

@@ -24,7 +24,7 @@ from data import DatasetSet
 from wavenet import WaveNet
 from wavenet_models import cross_entropy_loss, Encoder, ZDiscriminator
 from utils import create_output_dir, LossMeter, wrap
-from midi_encoder import MidiEncoder, OneHotMidiEncoder
+from midi_encoder import MidiEncoder, MultiHotMidiEncoder
 
 import pdb
 
@@ -45,6 +45,8 @@ parser.add_argument('--per-epoch', action='store_true',
                     help='Save model per epoch')
 parser.add_argument('--mode', type=int, default=4,
                     help='Mode of training to follow')
+parser.add_argument('--multihot', type=int, default=1,
+                    help='Use multihot encoding or not')
 parser.add_argument('--pretraining_epochs', type=int, default=10,
                     help='number of epochs to freeze encoder decoder')
 
@@ -94,6 +96,8 @@ parser.add_argument('--encoder-layers', type=int, default=10,
                     help='No. of layers in each encoder block.')
 parser.add_argument('--encoder-func', type=str, default='relu',
                     help='Encoder activation func.')
+parser.add_argument('--dict-size', type=int, default=70,
+                    help='number of unique chords for multihot encoder input size')
 
 # Decoder options
 parser.add_argument('--blocks', type=int, default=4,
@@ -164,15 +168,10 @@ class Trainer:
         self.discriminator = ZDiscriminator(args)
         self.midi_encoder = MidiEncoder(args)
 
-        if args.mode == 4:
-            # self.onehot = True
-            self.midi_encoder = OneHotMidiEncoder(args, 70)
+        if args.multihot == 1:
+            self.midi_encoder = MultiHotMidiEncoder(args, args.dict_size) #TODO: instead of passing 70, find the dict size
         else:
-            # self.onehot = False
             self.midi_encoder = MidiEncoder(args)
-
-        # if self.onehot:
-        #     self.onehot_midi_encoder = OneHotMidiEncoder(args, 70)
         
         self.start_epoch = 0
         
@@ -239,14 +238,9 @@ class Trainer:
         #                                         self.decoder.parameters(),
         #                                         self.midi_encoder.parameters()),
         #                                   lr=args.lr)
-        # if not self.onehot:
+
         params = [{'params' : d.parameters()} for d in self.decoders] + [{'params': self.encoder.parameters()}] +\
         [{'params': self.midi_encoder.parameters()}]
-        # else:
-        #     params = [{'params' : d.parameters()} for d in self.decoders] + [{'params': self.encoder.parameters()}] +\
-        #     [{'params': self.onehot_midi_encoder.parameters()}]
-            
-        # print(params)
         
         self.model_optimizer = optim.Adam(params, lr=args.lr)
         self.d_optimizer = optim.Adam(self.discriminator.parameters(),
@@ -259,48 +253,6 @@ class Trainer:
         self.lr_manager = torch.optim.lr_scheduler.ExponentialLR(self.model_optimizer, args.lr_decay)
         self.lr_manager.last_epoch = self.start_epoch
         self.lr_manager.step()
-
-    def eval_batch(self, x, x_aug, x_midi, dset_num):
-        x, x_aug = x.float(), x_aug.float()
-        
-        assert(dset_num is not None)
-
-        z = self.encoder(x)
-        if dset_num < self.args.num_decoders-1:
-            y = self.decoders[dset_num](x, z)
-        else:
-            y = self.decoders[-1](x, z)
-        z_logits = self.discriminator(z)
-
-        z_classification = torch.max(z_logits, dim=1)[1]
-
-        z_accuracy = (z_classification == dset_num).float().mean()
-
-        self.eval_d_right.add(z_accuracy.data.item())
-
-        # discriminator_right = F.cross_entropy(z_logits, dset_num).mean()
-        discriminator_right = F.cross_entropy(z_logits, torch.tensor([dset_num] * x.size(0)).long().cuda()).mean()
-        recon_loss = cross_entropy_loss(y, x)
-
-        self.evals_recon[dset_num].add(recon_loss.data.cpu().numpy().mean())
-        
-        total_loss = discriminator_right.data.item() * self.args.d_lambda + \
-                     recon_loss.mean().data.item()
-                     
-        aligned_loss = 0.0
-        if x_midi is not None:
-            # if self.onehot:
-            #     h, _ = self.onehot_midi_encoder(x_midi)
-            # else:
-            h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
-            h = h.view(z.shape)
-            aligned_loss = F.mse_loss(h, z)
-            total_loss += self.args.m_lambda * aligned_loss.mean().data.item()
-
-
-        self.eval_total.add(total_loss)
-
-        return total_loss
 
     def train_batch(self, epoch, x, x_aug, x_midi=None, dset_num=None):
         # print(x)
@@ -349,11 +301,6 @@ class Trainer:
         
         aligned_loss = 0.0
         if x_midi is not None:
-            # x_midi = x_midi.cpu()
-            # if self.onehot:
-            #     # print(x_midi)
-            #     h, _ = self.onehot_midi_encoder(x_midi)
-            # else:
             h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
             h = h.view(z.shape)
             aligned_loss = F.mse_loss(h, z)
@@ -379,6 +326,45 @@ class Trainer:
 
         return loss.data.item()
 
+    def eval_batch(self, x, x_aug, x_midi, dset_num):
+        x, x_aug = x.float(), x_aug.float()
+        
+        assert(dset_num is not None)
+
+        z = self.encoder(x)
+        if dset_num < self.args.num_decoders-1:
+            y = self.decoders[dset_num](x, z)
+        else:
+            y = self.decoders[-1](x, z)
+        z_logits = self.discriminator(z)
+
+        z_classification = torch.max(z_logits, dim=1)[1]
+
+        z_accuracy = (z_classification == dset_num).float().mean()
+
+        self.eval_d_right.add(z_accuracy.data.item())
+
+        # discriminator_right = F.cross_entropy(z_logits, dset_num).mean()
+        discriminator_right = F.cross_entropy(z_logits, torch.tensor([dset_num] * x.size(0)).long().cuda()).mean()
+        recon_loss = cross_entropy_loss(y, x)
+
+        self.evals_recon[dset_num].add(recon_loss.data.cpu().numpy().mean())
+        
+        total_loss = discriminator_right.data.item() * self.args.d_lambda + \
+                     recon_loss.mean().data.item()
+                     
+        aligned_loss = 0.0
+        if x_midi is not None:
+            h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
+            h = h.view(z.shape)
+            aligned_loss = F.mse_loss(h, z)
+            total_loss += self.args.m_lambda * aligned_loss.mean().data.item()
+
+
+        self.eval_total.add(total_loss)
+
+        return total_loss
+
     def train_epoch(self, epoch):
         for meter in self.losses_recon:
             meter.reset()
@@ -390,9 +376,6 @@ class Trainer:
         for decoder in self.decoders:
             decoder.train()
         self.discriminator.train()
-        # if self.onehot:
-        #     self.onehot_midi_encoder.train()
-        # else:
         self.midi_encoder.train()
         n_batches = self.args.epoch_len
 
@@ -412,7 +395,7 @@ class Trainer:
                 x, x_aug, x_midi = next(self.data[dset_num].train_iter)
                 # print(next(self.data[dset_num].train_iter))
                 # print("x: ", x)
-                # print("x_midi: ",x_midi)
+                # print("x_midi: ",x_midi.size())
 
                 x = wrap(x)
                 x_aug = wrap(x_aug)

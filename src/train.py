@@ -43,7 +43,7 @@ parser.add_argument('--checkpoint', default='',
 parser.add_argument('--load-optimizer', action='store_true')
 parser.add_argument('--per-epoch', action='store_true',
                     help='Save model per epoch')
-parser.add_argument('--mode', type=int, default=4,
+parser.add_argument('--mode', type=int, default=3,
                     help='Mode of training to follow')
 parser.add_argument('--multihot', type=int, default=1,
                     help='Use multihot encoding or not')
@@ -96,8 +96,9 @@ parser.add_argument('--encoder-layers', type=int, default=10,
                     help='No. of layers in each encoder block.')
 parser.add_argument('--encoder-func', type=str, default='relu',
                     help='Encoder activation func.')
-parser.add_argument('--dict-size', type=int, default=70,
-                    help='number of unique chords for multihot encoder input size')
+parser.add_argument('--mode1-maxsize', type=int, default=16,
+                    help='max number of chords to consider in a sequence in the given sampled interval for mode 1')
+
 
 # Decoder options
 parser.add_argument('--blocks', type=int, default=4,
@@ -147,6 +148,15 @@ class Trainer:
 
         self.logger = create_output_dir(args, self.expPath)
         self.data = [DatasetSet(d, args.seq_len, args) for d in args.data]
+
+        # Get size of midi -> set the size of encoder accordingly
+        for d in self.data:
+            x, x_aug, x_midi = next(d.train_iter)
+            if x_midi is not None:
+                break
+        self.midi_size = x_midi.size()
+
+
         assert not args.distributed or len(self.data) == int(
             os.environ['WORLD_SIZE']), "Number of datasets must match number of nodes"
 
@@ -166,10 +176,10 @@ class Trainer:
         else:
             self.decoders = [WaveNet(args) for _ in self.data]
         self.discriminator = ZDiscriminator(args)
-        self.midi_encoder = MidiEncoder(args)
+        # self.midi_encoder = MidiEncoder(args)
 
         if args.multihot == 1:
-            self.midi_encoder = MultiHotMidiEncoder(args, args.dict_size) #TODO: instead of passing 70, find the dict size
+            self.midi_encoder = MultiHotMidiEncoder(args, self.midi_size[2])
         else:
             self.midi_encoder = MidiEncoder(args)
         

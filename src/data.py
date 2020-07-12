@@ -427,12 +427,11 @@ class EncodedFilesDataset(data.Dataset):
 
 
 class H5Dataset(data.Dataset):
-    def __init__(self, top, seq_len, dataset_name, epoch_len=10000, augmentation=None, short=False,
+    def __init__(self, args, top, seq_len, dataset_name, epoch_len=10000, augmentation=None, short=False,
                  whole_samples=False, cache=False, mode=4):
         #TODO send as argument
         self.mode = mode
-
-
+        self.args = args
         self.path = Path(top)
         self.seq_len = seq_len
         self.epoch_len = epoch_len
@@ -483,7 +482,6 @@ class H5Dataset(data.Dataset):
         return ret[0], ret[1], midi
 
     def try_random_slice(self):
-        # print("try random sluice", self.file_paths)
         h5file_path = random.choice(self.file_paths)
         # print("TESTING:",h5file_path)
         if h5file_path in self.data_cache:
@@ -517,36 +515,44 @@ class H5Dataset(data.Dataset):
 
         end_time = start_time + slice_len
         idx = 0
+
+        # if self.args.multihot == 0:
+        #     chord_embed_size = 1
+        # else:
+        #     chord_embed_size = len(chords[0])
+
         if self.mode==1:
-            target_chords, target_durations = np.zeros(16),np.zeros(16)
+            if self.args.multihot==0:
+                target_chords, target_durations = np.zeros(16), np.zeros(16)
+            else:
+                target_chords, target_durations = np.zeros((16, len(chords[0]))), np.zeros(16)
             for i,t in enumerate(sTimes):
                 if t >= start_time:
                     if t <= end_time:
-                        # target_chords.append(chords[i])
-                        # target_durations.append(durations[i])
                         target_chords[idx] = chords[i]
                         target_durations[idx] = durations[i]
                         idx += 1
 
-                #ASSUMPTION : max midi size 16
-                # TODO : pass this as an argument
-                if t > end_time or idx>=16:
+                if t > end_time or idx>=self.args.mode1_maxsize:
                     break
 
+        # if self.mode==3:
+        #     target_chords, target_durations = np.zeros(int(slice_len*100)),np.zeros(int(slice_len*100))
+        #     sTimes = sTimes - sTimes[0]
+        #     time_prev_in_ms = 0
+        #     for i,time in enumerate(sTimes[1:]):
+        #         time_in_ms = int(time*100)
+        #         target_chords[time_prev_in_ms:time_in_ms] = chords[i-1]
+        #         time_prev_in_ms = time_in_ms
+        #     target_chords[time_in_ms:] = chords[-1]
+
         if self.mode==3:
-            target_chords, target_durations = np.zeros(int(slice_len*100)),np.zeros(int(slice_len*100))
-            sTimes = sTimes - sTimes[0]
-            time_prev_in_ms = 0
-            for i,time in enumerate(sTimes[1:]):
-                time_in_ms = int(time*100)
-                target_chords[time_prev_in_ms:time_in_ms] = chords[i-1]
-                time_prev_in_ms = time_in_ms
-            target_chords[time_in_ms:] = chords[-1]
-
-        if self.mode==4:
             # Mode3 + onehot
-            target_chords = np.zeros((int(slice_len*100),len(chords[0])))
-            target_durations = np.zeros((int(slice_len*100),len(chords[0])))
+            if self.args.multihot == 0:
+                target_chords, target_durations = np.zeros(int(slice_len*100)),np.zeros(int(slice_len*100))
+            else:
+                target_chords = np.zeros((int(slice_len*100), len(chords[0])))
+                target_durations = np.zeros((int(slice_len*100), len(chords[0])))
             sTimes = sTimes - sTimes[0]
             time_prev_in_ms = 0
             for i,time in enumerate(sTimes[1:]):
@@ -555,7 +561,7 @@ class H5Dataset(data.Dataset):
                 time_prev_in_ms = time_in_ms
             target_chords[time_in_ms:] = chords[-1]
 
-
+        # print("target data: ", target_chords.shape, target_durations.shape)
         return target_chords, target_durations
     
     def read_wav_midi_data(self, dataset, path):
@@ -577,7 +583,7 @@ class H5Dataset(data.Dataset):
             assert wav.shape[0] == self.seq_len
         if(midi_chords is None):
             return wav.T, None
-        if self.mode==4:
+        if self.mode==3:
             return wav.T, np.array(midi_chords)
         else:
             return wav.T, np.array(midi_chords).T
@@ -639,7 +645,7 @@ class DatasetSet:
         else:
             augmentation = None
 
-        self.train_dataset = H5Dataset(dir / 'train', seq_len, epoch_len=10000000000,
+        self.train_dataset = H5Dataset(args, dir / 'train', seq_len, epoch_len=10000000000,
                                        dataset_name=args.h5_dataset_name, augmentation=augmentation,
                                        short=args.short, cache=False, mode=args.mode)
         
@@ -651,7 +657,7 @@ class DatasetSet:
 
         self.train_iter = iter(self.train_loader)
 
-        self.valid_dataset = H5Dataset(dir / 'val', seq_len, epoch_len=1000000000,
+        self.valid_dataset = H5Dataset(args, dir / 'val', seq_len, epoch_len=1000000000,
                                        dataset_name=args.h5_dataset_name, augmentation=augmentation,
                                        short=args.short, mode=args.mode)
         self.valid_loader = data.DataLoader(self.valid_dataset,

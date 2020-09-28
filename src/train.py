@@ -24,7 +24,7 @@ from data import DatasetSet
 from wavenet import WaveNet
 from wavenet_models import cross_entropy_loss, Encoder, ZDiscriminator
 from utils import create_output_dir, LossMeter, wrap
-from midi_encoder import MidiEncoder, MultiHotMidiEncoder
+from midi_models import MidiEncoder, MidiDecoder
 
 import pdb
 
@@ -128,14 +128,21 @@ parser.add_argument('--grad-clip', type=float,
                     help='If specified, clip gradients with specified magnitude')
 
 # Midi Encoder options
-parser.add_argument('--m-vocab-size', type=int, default=50000,
-                    help='Total number of unique chords')
-parser.add_argument('--m-hidden-size', type=int, default=960,
-                    help='Hidden size of the LSTM')
-parser.add_argument('--m-embed-size', type=int, default=20,
-                    help='Embeddings size of the chords')
-parser.add_argument('--m-lambda', type=float, default=5,
-                    help='Aligned Loss Weight')
+parser.add_argument('--midi_vocab_size', type=int, default=50000,
+                    help='Number of Notes or Chords in the Midi Dataset')
+parser.add_argument('--input_embed_size', type=int, default=100,
+                    help='Size of the input embeddings')
+parser.add_argument('--encoder_hidden_size', type=int, default=960,
+                    help='Hidden Size of the Encoder\'s LSTM')
+parser.add_argument('--decoder_hidden_size', type=int, default=960,
+                    help='Hidden Size of the Decoder\'s LSTM')
+parser.add_argument('--midi_reconstruction_lambda', type=float, default=5,
+                    help='Lambda for the Midi\'s reconstruction loss')
+parser.add_argument('--device', default='cpu')
+
+# MIDI-WAV
+parser.add_argument('--midi_wav_lambda', type=float, default=5,
+                    help='Lambda for loss closeness of encoded wav and midi')
 
 class Trainer:
     def __init__(self, args):
@@ -164,6 +171,7 @@ class Trainer:
         self.loss_d_right = LossMeter('d')
         self.loss_total = LossMeter('total')
         self.loss_m_aligned = LossMeter('m')
+        self.loss_m_recon = LossMeter('midi_recon')
 
         self.evals_recon = [LossMeter(f'recon {i}') for i in range(self.args.n_datasets)]
         self.eval_d_right = LossMeter('eval d')
@@ -178,13 +186,11 @@ class Trainer:
         self.discriminator = ZDiscriminator(args)
         # self.midi_encoder = MidiEncoder(args)
 
-        if args.multihot == 1:
-            self.midi_encoder = MultiHotMidiEncoder(args, self.midi_size[2])
-        else:
-            self.midi_encoder = MidiEncoder(args)
-        
+        self.midi_embeddings = torch.randn(args.midi_vocab_size, args.input_embed_size)
+        self.midi_encoder = MidiEncoder(args, self.midi_embeddings)
+        self.midi_decoder = MidiDecoder(args, self.midi_embeddings)
         self.start_epoch = 0
-        
+
         #load pretrained model
         if args.checkpoint:
             print("Loading Pretrained models from ", args.checkpoint)
@@ -192,7 +198,7 @@ class Trainer:
             checkpoint_args = torch.load(checkpoint_args_path)
 
             # self.start_epoch = checkpoint_args[-1] + 1
-            
+
             states = torch.load(args.checkpoint)
             print(states.keys())
             #load encoder
@@ -229,7 +235,7 @@ class Trainer:
         if args.distributed:
             work = 0
             wont = 0
-            this = wont+work
+            _this_ = wont + work
             # self.encoder.cuda()
             # self.encoder = torch.nn.parallel.DistributedDataParallel(self.encoder)
             # self.discriminator.cuda()
@@ -240,8 +246,8 @@ class Trainer:
             self.encoder = torch.nn.DataParallel(self.encoder).cuda()
             self.discriminator = torch.nn.DataParallel(self.discriminator).cuda()
             self.midi_encoder = torch.nn.DataParallel(self.midi_encoder).cuda()
-            # if self.onehot:
-            #     self.onehot_midi_encoder = torch.nn.DataParallel(self.onehot_midi_encoder).cuda()
+            self.midi_decoder = torch.nn.DataParallel(self.midi_decoder).cuda()
+
         self.decoders = [torch.nn.DataParallel(d).cuda() for d in self.decoders]
 
         # self.model_optimizer = optim.Adam(chain(self.encoder.parameters(),
@@ -251,7 +257,7 @@ class Trainer:
 
         params = [{'params' : d.parameters()} for d in self.decoders] + [{'params': self.encoder.parameters()}] +\
         [{'params': self.midi_encoder.parameters()}]
-        
+
         self.model_optimizer = optim.Adam(params, lr=args.lr)
         self.d_optimizer = optim.Adam(self.discriminator.parameters(),
                                       lr=args.lr)
@@ -268,14 +274,14 @@ class Trainer:
         # print(x)
         x, x_aug= x.float(), x_aug.float()
         assert(dset_num is not None)
-        
+
         if epoch < self.args.pretraining_epochs:
             for p in self.encoder.parameters():
                 p.requires_grad=False
             for decoder in self.decoders:
                 for p in decoder.parameters():
                     p.requires_grad=False
-        
+
         # Optimize D - discriminator right
         z = self.encoder(x)
         z_logits = self.discriminator(z)
@@ -308,14 +314,18 @@ class Trainer:
 
         loss = (recon_loss.mean() + self.args.d_lambda * discriminator_wrong)
         # print("recon loss:", recon_loss.mean().item()," discriminator loss:",discriminator_wrong.item())
-        
+
         aligned_loss = 0.0
         if x_midi is not None:
-            h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
+            h, _  = self.midi_encoder(x_midi) # size : x_midi(seq_len, batch_size, midi_vocab_size) h(1, batch_size, hidden_size)
+            x_midi_logits = self.midi_decoder(h, x_midi) # size: x_midi_logits(seq_len+1, batch_size, midi_vocab_size)
             h = h.view(z.shape)
             aligned_loss = F.mse_loss(h, z)
-            loss += self.args.m_lambda * aligned_loss
+            midi_recon_loss = F.cross_entropy(x_midi, x_midi_logits)
+            loss += self.args.midi_wav_lambda * aligned_loss
+            loss += self.args.midi_reconstruction_lambda * midi_recon_loss
             self.loss_m_aligned.add(aligned_loss.data.item())
+            self.loss_m_recon.add(midi_recon_loss.item())
 
         self.model_optimizer.zero_grad()
         loss.backward()
@@ -338,7 +348,7 @@ class Trainer:
 
     def eval_batch(self, x, x_aug, x_midi, dset_num):
         x, x_aug = x.float(), x_aug.float()
-        
+
         assert(dset_num is not None)
 
         z = self.encoder(x)
@@ -359,10 +369,10 @@ class Trainer:
         recon_loss = cross_entropy_loss(y, x)
 
         self.evals_recon[dset_num].add(recon_loss.data.cpu().numpy().mean())
-        
+
         total_loss = discriminator_right.data.item() * self.args.d_lambda + \
                      recon_loss.mean().data.item()
-                     
+
         aligned_loss = 0.0
         if x_midi is not None:
             h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
@@ -381,12 +391,14 @@ class Trainer:
         self.loss_d_right.reset()
         self.loss_total.reset()
         self.loss_m_aligned.reset()
+        self.loss_m_recon.reset()
 
         self.encoder.train()
         for decoder in self.decoders:
             decoder.train()
         self.discriminator.train()
         self.midi_encoder.train()
+        self.midi_decoder.train()
         n_batches = self.args.epoch_len
 
         with tqdm(total=n_batches, desc='Train epoch %d' % epoch) as train_enum:
@@ -451,7 +463,7 @@ class Trainer:
                 x_aug = wrap(x_aug)
                 if(x_midi is not None):
                     x_midi = wrap(x_midi)
-                
+
                 batch_loss = self.eval_batch(x, x_aug, x_midi, dset_num)
 
                 valid_enum.set_description(f'Test (loss: {batch_loss:.2f}) epoch {epoch}')
@@ -463,7 +475,7 @@ class Trainer:
         return ', '.join('{:.4f}'.format(x) for x in losses)
 
     def train_losses(self):
-        meters = [*self.losses_recon, self.loss_d_right, self.loss_m_aligned]
+        meters = [*self.losses_recon, self.loss_d_right, self.loss_m_aligned, self.loss_m_recon]
         return self.format_losses(meters)
 
     def eval_losses(self):
@@ -515,7 +527,7 @@ class Trainer:
                     'midi_encoder_state': self.midi_encoder.state_dict()
                     },
                    save_path)
-        
+
         # for i, decoder in enumerate(self.decoders):
         #     # decoder_path = str(self.expPath) + "_d_" + str(i) + ".pth"
         #     decoder_filename = "decoder_" + str(i) + ".pth"

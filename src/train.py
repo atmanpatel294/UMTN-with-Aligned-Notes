@@ -177,12 +177,16 @@ class Trainer:
             self.decoders = [WaveNet(args) for _ in self.data]
         self.discriminator = ZDiscriminator(args)
         # self.midi_encoder = MidiEncoder(args)
-
-        if args.multihot == 1:
-            self.midi_encoder = MultiHotMidiEncoder(args, self.midi_size[2])
-        else:
-            self.midi_encoder = MidiEncoder(args)
         
+        # vocab size if basically number of notes
+        # self.embeddings = nn.Embeddings(args.vocab_size, args.embedding_size)
+
+        # if args.multihot == 1:
+        #     self.midi_encoder = MultiHotMidiEncoder(args, self.midi_size[2])
+        # else:
+        #     self.midi_encoder = MidiEncoder(args)
+        midi_encoder = MidiEncoder(args)
+
         self.start_epoch = 0
         
         #load pretrained model

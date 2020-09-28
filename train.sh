@@ -10,8 +10,8 @@ set -e -x
 CODE=src
 # path to data folder should be according to multihot argument
 # DATA=datasets/preprocessed
-DATA=/datasets/tmp/dl4s/datasets/processed/midi_wav_0
-# DATA=/datasets/tmp/dl4s/datasets/processed/midi_wav
+# DATA=/datasets/tmp/dl4s/datasets/processed/midi_wav_0
+DATA=/datasets/tmp/dl4s/datasets/processed/midi_wav
 
 EXP="final_warm_wav_midi_multihot_run3"
 export MASTER_PORT=29500
@@ -31,17 +31,17 @@ python ${CODE}/train.py \
     --lr 1e-3 \
     --seq-len 12000 \
     --d-lambda 1e-2 \
-    --m-lambda 0.1 \
     --latent-d 64 \
     --layers 14 \
     --blocks 4 \
     --data-aug \
     --checkpoint checkpoints/pretrained_musicnet/bestmodel_0.pth \
     --grad-clip 1 \
-    --mode 3 \
+    --input_type notes \
     --num-decoders 5 \
     --pretraining_epochs 25 \
-    --multihot 0
+    --input_method notes_repeated_for_duration
+    # --m-lambda 0.1 \
     # --dict-size 70
 
         #    ${DATA}/Franz_Liszt \

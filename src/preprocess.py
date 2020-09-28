@@ -17,15 +17,21 @@ def main():
     parser.add_argument('-o', '--output', type=Path, required=True,
                         help='Output directory')
     parser.add_argument('--norm-db', required=False, action='store_true')
+    parser.add_argument('--data_type', type=str, required=True,
+                        help='either wav or midi')
+    parser.add_argument('--midi_type', type=str,
+                        help='either chords or notes')
 
     args = parser.parse_args()
     print(args)
-    dataset = data.EncodedFilesDataset(args.input)
-    dataset.dump_to_folder(args.output, norm_db=args.norm_db)
-    # midi_dataset = data.MidiFileDataset(args.input)
-    # midi_dataset.dump_to_folder(args.output)
-    # midi_dataset = data.MidiMultiHotFileDataset(args.input)
-    # midi_dataset.dump_to_folder(args.output)
+    if args.data_type == 'wav':
+        dataset = data.EncodedFilesDataset(args.input)
+        dataset.dump_to_folder(args.output, norm_db=args.norm_db)
+    elif args.data_type=="midi":
+        dataset = data.MidiCommonPreprocessor(args)
+        dataset.dump_to_folder(args.output)
+    else:
+        print("\nERROR: Please enter correct mode from \nwav \nmidi")
 
 
 if __name__ == '__main__':

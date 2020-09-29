@@ -131,7 +131,7 @@ parser.add_argument('--grad-clip', type=float,
                     help='If specified, clip gradients with specified magnitude')
 
 # Midi Encoder options
-parser.add_argument('--midi_vocab_size', type=int, default=70,
+parser.add_argument('--midi_vocab_size', type=int, default=83,
                     help='Number of Notes or Chords in the Midi Dataset')
 parser.add_argument('--input_embed_size', type=int, default=100,
                     help='Size of the input embeddings')
@@ -141,17 +141,21 @@ parser.add_argument('--decoder_hidden_size', type=int, default=960,
                     help='Hidden Size of the Decoder\'s LSTM')
 parser.add_argument('--midi_reconstruction_lambda', type=float, default=5,
                     help='Lambda for the Midi\'s reconstruction loss')
-parser.add_argument('--device', default='cpu')
 
 # MIDI-WAV
 parser.add_argument('--midi_wav_lambda', type=float, default=5,
                     help='Lambda for loss closeness of encoded wav and midi')
+
+parser.add_argument('--disable-cuda', action='store_true',
+                    help='Disable CUDA')
+parser.add_argument('--device', default='cuda')
 
 class Trainer:
     def __init__(self, args):
         self.args = args
         self.args.n_datasets = len(self.args.data)
         self.expPath = Path('checkpoints') / args.expName
+        self.device = args.device
 
         torch.manual_seed(args.seed)
         torch.cuda.manual_seed(args.seed)
@@ -190,7 +194,7 @@ class Trainer:
         self.discriminator = ZDiscriminator(args)
         # self.midi_encoder = MidiEncoder(args)
 
-        self.midi_embeddings = torch.randn(args.midi_vocab_size, args.input_embed_size)
+        self.midi_embeddings = torch.randn(args.midi_vocab_size, args.input_embed_size, device=args.device)
         self.midi_encoder = MidiEncoder(args, self.midi_embeddings)
         self.midi_decoder = MidiDecoder(args, self.midi_embeddings)
         self.start_epoch = 0
@@ -240,12 +244,6 @@ class Trainer:
             work = 0
             wont = 0
             _this_ = wont + work
-            # self.encoder.cuda()
-            # self.encoder = torch.nn.parallel.DistributedDataParallel(self.encoder)
-            # self.discriminator.cuda()
-            # self.discriminator = torch.nn.parallel.DistributedDataParallel(self.discriminator)
-            # self.logger.info('Created DistributedDataParallel')
-            # self.decoder = torch.nn.DataParallel(self.decoder).cuda()
         else:
             self.encoder = torch.nn.DataParallel(self.encoder).cuda()
             self.discriminator = torch.nn.DataParallel(self.discriminator).cuda()
@@ -291,7 +289,7 @@ class Trainer:
         # Optimize D - discriminator right
         z = self.encoder(x)
         z_logits = self.discriminator(z)
-        discriminator_right = F.cross_entropy(z_logits, torch.tensor([dset_num] * x.size(0)).long().cuda()).mean()
+        discriminator_right = F.cross_entropy(z_logits, torch.tensor([dset_num] * x.size(0), device=self.device).long()).mean()
         loss = discriminator_right * self.args.d_lambda
 
         self.loss_d_right.add(discriminator_right.data.item())
@@ -309,7 +307,7 @@ class Trainer:
         else:
             y = self.decoders[-1](x, z)
         z_logits = self.discriminator(z)
-        discriminator_wrong = - F.cross_entropy(z_logits, torch.tensor([dset_num] * x.size(0)).long().cuda()).mean()
+        discriminator_wrong = - F.cross_entropy(z_logits, torch.tensor([dset_num] * x.size(0), device=self.device).long()).mean()
 
         if not (-100 < discriminator_right.data.item() < 100):
             self.logger.debug(f'z_logits: {z_logits.detach().cpu().numpy()}')
@@ -324,10 +322,10 @@ class Trainer:
         aligned_loss = 0.0
         if x_midi is not None:
             h, _  = self.midi_encoder(x_midi) # size : x_midi(seq_len, batch_size, midi_vocab_size) h(1, batch_size, hidden_size)
-            x_midi_logits = self.midi_decoder(h, x_midi) # size: x_midi_logits(seq_len+1, batch_size, midi_vocab_size)
+            x_midi_logits = self.midi_decoder(h, x_midi) # size: x_midi_logits(seq_len, batch_size, midi_vocab_size)
             h = h.view(z.shape)
             aligned_loss = F.mse_loss(h, z)
-            midi_recon_loss = F.cross_entropy(x_midi, x_midi_logits)
+            midi_recon_loss = F.binary_cross_entropy_with_logits(x_midi_logits.permute(1, 0, 2), x_midi.permute(1, 0, 2))
             loss += self.args.midi_wav_lambda * aligned_loss
             loss += self.args.midi_reconstruction_lambda * midi_recon_loss
             self.loss_m_aligned.add(aligned_loss.data.item())
@@ -373,7 +371,7 @@ class Trainer:
         self.eval_d_right.add(z_accuracy.data.item())
 
         # discriminator_right = F.cross_entropy(z_logits, dset_num).mean()
-        discriminator_right = F.cross_entropy(z_logits, torch.tensor([dset_num] * x.size(0)).long().cuda()).mean()
+        discriminator_right = F.cross_entropy(z_logits, torch.tensor([dset_num] * x.size(0), device = self.device).long()).mean()
         recon_loss = cross_entropy_loss(y, x)
 
         self.evals_recon[dset_num].add(recon_loss.data.cpu().numpy().mean())
@@ -384,10 +382,12 @@ class Trainer:
         aligned_loss = 0.0
         if x_midi is not None:
             h, _  = self.midi_encoder(x_midi) # size : (bs, hidden_size)
+            x_midi_logits = self.midi_decoder(h, x_midi) # size: x_midi_logits(seq_len, batch_size, midi_vocab_size)
             h = h.view(z.shape)
             aligned_loss = F.mse_loss(h, z)
-            total_loss += self.args.m_lambda * aligned_loss.mean().data.item()
-
+            midi_recon_loss = F.binary_cross_entropy_with_logits(x_midi_logits.permute(1, 0, 2), x_midi.permute(1, 0, 2))
+            total_loss += self.args.midi_wav_lambda * aligned_loss.mean().data.item() + \
+                            self.args.midi_reconstruction_lambda * midi_recon_loss.mean().data.item()
 
         self.eval_total.add(total_loss)
 
@@ -549,6 +549,11 @@ class Trainer:
 def main():
     args = parser.parse_args()
     args.distributed = False
+    if not args.disable_cuda and torch.cuda.is_available():
+        args.device = torch.device('cuda')
+    else:
+        args.device = torch.device('cpu')
+
     if 'WORLD_SIZE' in os.environ:
         args.distributed = int(os.environ['WORLD_SIZE']) > 1
 

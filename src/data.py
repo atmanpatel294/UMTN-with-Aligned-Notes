@@ -694,7 +694,8 @@ class H5Dataset(data.Dataset):
                 if sTimes[i] + durations[i] > target_start_time and sTimes[i] < target_end_time:
                     start_idx = int(max(0, sTimes[i] - target_start_time) * time_to_idx)
                     end_idx = int(min(slice_len_in_sec, sTimes[i] + durations[i] - target_start_time) * time_to_idx)
-                    target_notes[start_idx:end_idx] = [np.add(target_notes[j],notes[i]) for j in range(start_idx, end_idx)]
+                    if end_idx > start_idx:
+                        target_notes[start_idx:end_idx] = [np.add(target_notes[j],notes[i]) for j in range(start_idx, end_idx)]
                 if sTimes[i] > target_end_time:
                     break
             
